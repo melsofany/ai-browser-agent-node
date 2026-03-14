@@ -154,11 +154,7 @@ Do NOT be verbose. Save tokens.`;
 
       return chunks;
     } catch (error) {
-      if (error.message.includes('API key not valid')) {
-        console.error('[ThinkingAgent] CRITICAL ERROR: The Gemini API Key provided is invalid. Please check your AI Studio Secrets.');
-      } else {
-        console.error('[ThinkingAgent] Error generating thinking:', error.message);
-      }
+      console.error('[ThinkingAgent] Error generating thinking:', error.message);
       return [];
     }
   }

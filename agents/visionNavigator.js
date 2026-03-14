@@ -399,11 +399,7 @@ Return as JSON array of elements, sorted by confidence (highest first).`;
       const result = this.safeJsonParse(response.data.choices[0].message.content);
       return Array.isArray(result) ? result : result.elements || [];
     } catch (error) {
-      if (error.message.includes('API key not valid')) {
-        console.error('[VisionNavigator] CRITICAL ERROR: The Gemini API Key provided is invalid. Please check your AI Studio Secrets.');
-      } else {
-        console.error('[VisionNavigator] AI analysis failed:', error.message);
-      }
+      console.error('[VisionNavigator] AI analysis failed:', error.message);
       return this.analyzeScreenshotLocally(screenshotPath, description);
     }
   }

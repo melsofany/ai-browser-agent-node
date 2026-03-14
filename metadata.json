@@ -1,5 +1,5 @@
 {
   "name": "Manus AI Browser Agent",
-  "description": "A powerful autonomous AI agent that browses the web, researches topics, and executes complex tasks using Gemini and DeepSeek AI.",
+  "description": "A powerful autonomous AI agent that browses the web, researches topics, and executes complex tasks using DeepSeek AI.",
   "requestFramePermissions": []
 }

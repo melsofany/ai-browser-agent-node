@@ -216,7 +216,7 @@ Return ONLY a valid JSON object (no markdown blocks, no preamble):
 
     console.log(`[PlannerAgent] Planning task: ${description}`);
 
-    // Auto-determine priority and type using DeepSeek or Gemini
+    // Auto-determine priority and type using DeepSeek
     if (!type || type === 'auto') {
       if (this.deepseekApiKey) {
         try {
