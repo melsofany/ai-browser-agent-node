@@ -16,6 +16,18 @@ services:
       - key: DEEPSEEK_API_KEY
         fromDatabase:
           name: deepseek_api_key
+      - key: OPENAI_API_KEY
+        fromDatabase:
+          name: openai_api_key
+      - key: MISTRAL_API_KEY
+        fromDatabase:
+          name: mistral_api_key
+      - key: QWEN_API_KEY
+        fromDatabase:
+          name: qwen_api_key
+      - key: LLAMA_API_KEY
+        fromDatabase:
+          name: llama_api_key
       - key: RENDER_API_KEY
         fromDatabase:
           name: render_api_key

@@ -6,8 +6,28 @@ import { createServer as createViteServer } from 'vite';
 import initializeRoutes from './api/routes';
 import TaskController from './controllers/taskController';
 import config from './config/config';
+const IntegrationsManager = require('./agents/integrationsManager');
 
 async function startServer() {
+  // Initialize Integrations Manager
+  const integrationsManager = new IntegrationsManager({
+    activeProvider: 'llama',
+    fallbackProviders: ['mistral', 'qwen'],
+    llama: { modelName: 'llama-2-7b' },
+    mistral: { apiKey: process.env.MISTRAL_API_KEY },
+    qwen: { apiKey: process.env.QWEN_API_KEY },
+    openInterpreter: { apiKey: process.env.OPENAI_API_KEY },
+    autogpt: { apiKey: process.env.OPENAI_API_KEY },
+    langgraph: { apiKey: process.env.OPENAI_API_KEY }
+  });
+
+  try {
+    await integrationsManager.initialize();
+    console.log('[Server] Integrations Manager initialized successfully');
+  } catch (error) {
+    console.error('[Server] Failed to initialize Integrations Manager:', error);
+  }
+
   const app = express();
   const server = http.createServer(app);
   const io = new SocketServer(server, {
@@ -54,6 +74,26 @@ async function startServer() {
   // API Routes
   const routes = initializeRoutes(taskController, io);
   app.use('/api', routes);
+
+  // Integrations Health Check Route
+  app.get('/api/integrations/health', async (req, res) => {
+    try {
+      const health = await integrationsManager.healthCheck();
+      res.json(health);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Integrations Capabilities Route
+  app.get('/api/integrations/capabilities', (req, res) => {
+    try {
+      const capabilities = integrationsManager.getAllCapabilities();
+      res.json(capabilities);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   // WebSocket connections
   io.on('connection', (socket) => {

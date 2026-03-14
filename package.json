@@ -37,7 +37,10 @@
     "socket.io-client": "^4.8.3",
     "sqlite3": "^5.1.6",
     "tsx": "^4.21.0",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "openai": "^4.52.0",
+    "langchain": "^0.1.35",
+    "@langchain/core": "^0.1.35"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.14",
