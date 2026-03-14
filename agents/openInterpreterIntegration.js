@@ -1,12 +1,11 @@
 /**
- * Open Interpreter Integration Module
+ * Open Interpreter Integration Module (Local-Only Mode)
  * Integrates Open Interpreter with the AI Browser Agent
- * Enables code execution and system command interpretation
+ * This version is strictly local and does not require external API keys.
  */
 
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 
@@ -15,21 +14,19 @@ const execPromise = promisify(exec);
 class OpenInterpreterIntegration {
   constructor(config = {}) {
     this.interpreterPath = config.interpreterPath || path.join(__dirname, '../integrations/open-interpreter');
-    this.sandboxMode = config.sandboxMode !== false; // Enable sandbox by default for safety
+    this.sandboxMode = config.sandboxMode !== false;
     this.allowedLanguages = config.allowedLanguages || ['javascript', 'python', 'bash', 'sql'];
-    this.executionTimeout = config.executionTimeout || 30000; // 30 seconds
-    this.apiKey = config.apiKey || process.env.OPENAI_API_KEY;
+    this.executionTimeout = config.executionTimeout || 30000;
     this.initialized = false;
   }
 
   /**
-   * Initialize Open Interpreter integration
+   * Initialize Open Interpreter integration locally
    */
   async initialize() {
     try {
-      console.log('[OpenInterpreterIntegration] Initializing Open Interpreter...');
+      console.log('[OpenInterpreterIntegration] Initializing Local Open Interpreter...');
       
-      // Check if interpreter files exist
       const interpreterExists = fs.existsSync(this.interpreterPath);
       if (!interpreterExists) {
         console.warn('[OpenInterpreterIntegration] Interpreter path not found.');
@@ -45,7 +42,7 @@ class OpenInterpreterIntegration {
   }
 
   /**
-   * Execute code safely
+   * Execute code locally (No API)
    */
   async executeCode(code, language = 'javascript', context = {}) {
     if (!this.initialized) {
@@ -57,9 +54,8 @@ class OpenInterpreterIntegration {
     }
 
     try {
-      console.log(`[OpenInterpreterIntegration] Executing ${language} code...`);
+      console.log(`[OpenInterpreterIntegration] Executing ${language} code locally...`);
       
-      let command;
       switch (language) {
         case 'javascript':
           return await this.executeJavaScript(code, context);
@@ -79,20 +75,11 @@ class OpenInterpreterIntegration {
   }
 
   /**
-   * Execute JavaScript code
+   * Execute JavaScript code locally
    */
   async executeJavaScript(code, context = {}) {
     try {
-      // Create a safe execution context
-      const sandbox = {
-        console: console,
-        Math: Math,
-        Date: Date,
-        JSON: JSON,
-        ...context
-      };
-
-      // Use Function constructor for safer execution
+      const sandbox = { console, Math, Date, JSON, ...context };
       const func = new Function(...Object.keys(sandbox), code);
       const result = await func(...Object.values(sandbox));
 
@@ -103,30 +90,23 @@ class OpenInterpreterIntegration {
         output: String(result)
       };
     } catch (error) {
-      return {
-        success: false,
-        language: 'javascript',
-        error: error.message,
-        stack: error.stack
-      };
+      return { success: false, language: 'javascript', error: error.message };
     }
   }
 
   /**
-   * Execute Python code
+   * Execute Python code locally
    */
   async executePython(code, context = {}) {
     try {
-      // Create temporary Python file
       const tempFile = `/tmp/temp_${Date.now()}.py`;
       fs.writeFileSync(tempFile, code);
 
       const { stdout, stderr } = await execPromise(`python3 ${tempFile}`, {
         timeout: this.executionTimeout,
-        maxBuffer: 10 * 1024 * 1024 // 10MB
+        maxBuffer: 10 * 1024 * 1024
       });
 
-      // Clean up
       fs.unlinkSync(tempFile);
 
       return {
@@ -136,23 +116,18 @@ class OpenInterpreterIntegration {
         error: stderr || null
       };
     } catch (error) {
-      return {
-        success: false,
-        language: 'python',
-        error: error.message,
-        stderr: error.stderr || ''
-      };
+      return { success: false, language: 'python', error: error.message };
     }
   }
 
   /**
-   * Execute Bash commands
+   * Execute Bash commands locally
    */
   async executeBash(code, context = {}) {
     try {
       const { stdout, stderr } = await execPromise(code, {
         timeout: this.executionTimeout,
-        maxBuffer: 10 * 1024 * 1024 // 10MB
+        maxBuffer: 10 * 1024 * 1024
       });
 
       return {
@@ -162,90 +137,55 @@ class OpenInterpreterIntegration {
         error: stderr || null
       };
     } catch (error) {
-      return {
-        success: false,
-        language: 'bash',
-        error: error.message,
-        stderr: error.stderr || ''
-      };
+      return { success: false, language: 'bash', error: error.message };
     }
   }
 
   /**
-   * Execute SQL queries
+   * Execute SQL queries locally
    */
   async executeSQL(code, context = {}) {
     try {
       if (!context.database) {
         throw new Error('Database connection required for SQL execution');
       }
-
       const result = await context.database.query(code);
-
-      return {
-        success: true,
-        language: 'sql',
-        result: result,
-        rows: result.length || 0
-      };
+      return { success: true, language: 'sql', result: result, rows: result.length || 0 };
     } catch (error) {
-      return {
-        success: false,
-        language: 'sql',
-        error: error.message
-      };
+      return { success: false, language: 'sql', error: error.message };
     }
   }
 
   /**
-   * Interpret and execute natural language instructions
+   * Interpret and execute natural language instructions locally
+   * Uses the local LLM (Llama/Mistral/Qwen) instead of OpenAI API
    */
-  async interpretInstruction(instruction, context = {}) {
-    if (!this.apiKey) {
-      throw new Error('OpenAI API key is required for instruction interpretation');
+  async interpretInstruction(instruction, context = {}, localLLM) {
+    if (!localLLM) {
+      throw new Error('Local LLM engine is required for local instruction interpretation');
     }
 
     try {
-      console.log('[OpenInterpreterIntegration] Interpreting instruction...');
+      console.log('[OpenInterpreterIntegration] Interpreting instruction locally using local LLM...');
       
-      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an expert code interpreter. Convert natural language instructions into executable code.
+      const prompt = `You are an expert code interpreter. Convert natural language instructions into executable code.
 Always respond with a JSON object containing:
 {
   "language": "javascript|python|bash|sql",
   "code": "the executable code",
   "explanation": "brief explanation of what the code does"
-}`
-          },
-          {
-            role: 'user',
-            content: instruction
-          }
-        ],
-        temperature: 0.3,
-        max_tokens: 1024
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      });
+}
 
-      const content = response.data.choices[0].message.content;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+Instruction: ${instruction}`;
+
+      const result = await localLLM.generateText(prompt, { temperature: 0.1 });
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
       
       if (!jsonMatch) {
-        throw new Error('Failed to parse code from response');
+        throw new Error('Failed to parse code from local LLM response');
       }
 
       const parsed = JSON.parse(jsonMatch[0]);
-      
-      // Execute the generated code
       const executionResult = await this.executeCode(parsed.code, parsed.language, context);
 
       return {
@@ -255,61 +195,9 @@ Always respond with a JSON object containing:
         execution: executionResult
       };
     } catch (error) {
-      console.error('[OpenInterpreterIntegration] Instruction interpretation failed:', error.message);
+      console.error('[OpenInterpreterIntegration] Local instruction interpretation failed:', error.message);
       throw error;
     }
-  }
-
-  /**
-   * Get supported languages
-   */
-  getSupportedLanguages() {
-    return this.allowedLanguages;
-  }
-
-  /**
-   * Add allowed language
-   */
-  addAllowedLanguage(language) {
-    if (!this.allowedLanguages.includes(language)) {
-      this.allowedLanguages.push(language);
-      console.log(`[OpenInterpreterIntegration] Added language: ${language}`);
-    }
-  }
-
-  /**
-   * Remove allowed language
-   */
-  removeAllowedLanguage(language) {
-    const index = this.allowedLanguages.indexOf(language);
-    if (index > -1) {
-      this.allowedLanguages.splice(index, 1);
-      console.log(`[OpenInterpreterIntegration] Removed language: ${language}`);
-    }
-  }
-
-  /**
-   * Validate code safety
-   */
-  validateCodeSafety(code, language) {
-    const dangerousPatterns = [
-      /rm\s+-rf/i, // Dangerous bash command
-      /eval\s*\(/i, // Eval function
-      /exec\s*\(/i, // Exec function
-      /require\s*\(\s*['"]child_process['"]\s*\)/i, // Child process
-      /import\s+os/i, // OS module import
-    ];
-
-    for (const pattern of dangerousPatterns) {
-      if (pattern.test(code)) {
-        return {
-          safe: false,
-          reason: `Potentially dangerous pattern detected: ${pattern}`
-        };
-      }
-    }
-
-    return { safe: true };
   }
 }
 

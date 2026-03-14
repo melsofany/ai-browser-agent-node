@@ -9,7 +9,8 @@ module.exports = {
   githubToken: process.env.GITHUB_TOKEN,
   deepseekApiKey: process.env.DEEPSEEK_API_KEY,
   hasDeepSeekKey: !!process.env.DEEPSEEK_API_KEY,
-  preferDeepSeek: true, // User requested to prioritize DeepSeek
+  preferDeepSeek: false, // Switched to local models
+  localOnlyMode: true, // Strictly local execution
   renderApiKey: process.env.RENDER_API_KEY,
   logLevel: process.env.LOG_LEVEL || 'info',
   browserTimeout: parseInt(process.env.BROWSER_TIMEOUT) || 30000,

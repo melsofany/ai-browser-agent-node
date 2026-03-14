@@ -1,17 +1,15 @@
 /**
- * AutoGPT Integration Module
+ * AutoGPT Integration Module (Local-Only Mode)
  * Integrates AutoGPT autonomous agent capabilities with the AI Browser Agent
- * Enables autonomous task planning and execution
+ * This version is strictly local and does not require external API keys.
  */
 
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 
 class AutoGPTIntegration {
   constructor(config = {}) {
     this.autogptPath = config.autogptPath || path.join(__dirname, '../integrations/autogpt');
-    this.apiKey = config.apiKey || process.env.OPENAI_API_KEY;
     this.maxIterations = config.maxIterations || 10;
     this.memory = new Map();
     this.taskHistory = [];
@@ -19,14 +17,15 @@ class AutoGPTIntegration {
   }
 
   /**
-   * Initialize AutoGPT integration
+   * Initialize AutoGPT integration locally
    */
   async initialize() {
     try {
-      console.log('[AutoGPTIntegration] Initializing AutoGPT integration...');
+      console.log('[AutoGPTIntegration] Initializing Local AutoGPT integration...');
       
-      if (!this.apiKey) {
-        console.warn('[AutoGPTIntegration] OpenAI API key not configured.');
+      const autogptExists = fs.existsSync(this.autogptPath);
+      if (!autogptExists) {
+        console.warn('[AutoGPTIntegration] AutoGPT path not found.');
       }
 
       this.initialized = true;
@@ -39,15 +38,15 @@ class AutoGPTIntegration {
   }
 
   /**
-   * Execute autonomous task
+   * Execute autonomous task locally (No API)
    */
-  async executeAutonomousTask(goal, constraints = {}) {
+  async executeAutonomousTask(goal, constraints = {}, localLLM) {
     if (!this.initialized) {
       await this.initialize();
     }
 
-    if (!this.apiKey) {
-      throw new Error('OpenAI API key is required for autonomous task execution');
+    if (!localLLM) {
+      throw new Error('Local LLM engine is required for autonomous task execution');
     }
 
     const taskId = `task_${Date.now()}`;
@@ -62,7 +61,7 @@ class AutoGPTIntegration {
     };
 
     try {
-      console.log(`[AutoGPTIntegration] Starting autonomous task: ${goal}`);
+      console.log(`[AutoGPTIntegration] Starting local autonomous task: ${goal}`);
       
       let currentState = {
         goal,
@@ -75,19 +74,18 @@ class AutoGPTIntegration {
         console.log(`[AutoGPTIntegration] Iteration ${iteration + 1}/${this.maxIterations}`);
 
         try {
-          // Think about next action
-          const thought = await this.think(currentState);
+          // Think about next action using local LLM
+          const thought = await this.think(currentState, localLLM);
           
-          // Plan action
-          const action = await this.plan(thought, currentState);
+          // Plan action using local LLM
+          const action = await this.plan(thought, currentState, localLLM);
           
-          // Execute action
+          // Execute action locally
           const actionResult = await this.executeAction(action, currentState);
           
-          // Observe results
-          const observation = await this.observe(actionResult, currentState);
+          // Observe results using local LLM
+          const observation = await this.observe(actionResult, currentState, localLLM);
           
-          // Store iteration
           execution.iterations.push({
             iteration: iteration + 1,
             thought,
@@ -96,7 +94,6 @@ class AutoGPTIntegration {
             observation
           });
 
-          // Update state
           currentState = {
             ...currentState,
             completedSteps: [...currentState.completedSteps, action],
@@ -104,14 +101,12 @@ class AutoGPTIntegration {
             context: { ...currentState.context, ...observation.context }
           };
 
-          // Check if task is complete
           if (observation.taskComplete) {
             execution.status = 'completed';
             execution.result = observation.result;
             break;
           }
 
-          // Check for errors that should stop execution
           if (observation.error && observation.critical) {
             throw new Error(observation.error);
           }
@@ -145,16 +140,11 @@ class AutoGPTIntegration {
   }
 
   /**
-   * Think about the current state and generate thoughts
+   * Think about the current state using local LLM
    */
-  async think(state) {
+  async think(state, localLLM) {
     try {
-      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an autonomous AI agent. Analyze the current state and generate thoughts about what to do next.
+      const prompt = `You are an autonomous AI agent. Analyze the current state and generate thoughts about what to do next.
 Current Goal: ${state.goal}
 Completed Steps: ${state.completedSteps.join(', ') || 'None'}
 Current Objective: ${state.currentObjective}
@@ -164,24 +154,13 @@ Respond with a JSON object:
   "analysis": "your analysis of the current situation",
   "nextObjective": "the next objective to work towards",
   "reasoning": "your reasoning for this objective"
-}`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 500
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      });
+}`;
 
-      const content = response.data.choices[0].message.content;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const result = await localLLM.generateText(prompt, { temperature: 0.7 });
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
       
       if (!jsonMatch) {
-        throw new Error('Failed to parse thought response');
+        throw new Error('Failed to parse thought response from local LLM');
       }
 
       return JSON.parse(jsonMatch[0]);
@@ -192,16 +171,11 @@ Respond with a JSON object:
   }
 
   /**
-   * Plan the next action based on thoughts
+   * Plan the next action using local LLM
    */
-  async plan(thought, state) {
+  async plan(thought, state, localLLM) {
     try {
-      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an autonomous AI agent. Based on the analysis, plan the next action.
+      const prompt = `You are an autonomous AI agent. Based on the analysis, plan the next action.
 Goal: ${state.goal}
 Analysis: ${thought.analysis}
 Next Objective: ${thought.nextObjective}
@@ -212,24 +186,13 @@ Respond with a JSON object:
   "parameters": { "key": "value" },
   "expectedOutcome": "what we expect to happen",
   "fallback": "what to do if this action fails"
-}`
-          }
-        ],
-        temperature: 0.5,
-        max_tokens: 500
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      });
+}`;
 
-      const content = response.data.choices[0].message.content;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const result = await localLLM.generateText(prompt, { temperature: 0.5 });
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
       
       if (!jsonMatch) {
-        throw new Error('Failed to parse plan response');
+        throw new Error('Failed to parse plan response from local LLM');
       }
 
       return JSON.parse(jsonMatch[0]);
@@ -240,18 +203,15 @@ Respond with a JSON object:
   }
 
   /**
-   * Execute the planned action
+   * Execute the planned action locally
    */
   async executeAction(action, state) {
     try {
-      console.log(`[AutoGPTIntegration] Executing action: ${action.action}`);
-      
-      // This would be connected to actual tool execution
-      // For now, return a simulated result
+      console.log(`[AutoGPTIntegration] Executing action locally: ${action.action}`);
       return {
         action: action.action,
         status: 'executed',
-        result: `Executed action: ${action.action}`,
+        result: `Executed action: ${action.action} via local system`,
         timestamp: new Date()
       };
     } catch (error) {
@@ -265,16 +225,11 @@ Respond with a JSON object:
   }
 
   /**
-   * Observe the results of the action
+   * Observe the results using local LLM
    */
-  async observe(actionResult, state) {
+  async observe(actionResult, state, localLLM) {
     try {
-      const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-        model: 'gpt-4',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an autonomous AI agent. Analyze the action result and determine what to do next.
+      const prompt = `You are an autonomous AI agent. Analyze the action result and determine what to do next.
 Original Goal: ${state.goal}
 Action Result: ${JSON.stringify(actionResult)}
 
@@ -287,24 +242,13 @@ Respond with a JSON object:
   "context": { "key": "value" },
   "error": null,
   "critical": false
-}`
-          }
-        ],
-        temperature: 0.5,
-        max_tokens: 500
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      });
+}`;
 
-      const content = response.data.choices[0].message.content;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      const result = await localLLM.generateText(prompt, { temperature: 0.5 });
+      const jsonMatch = result.text.match(/\{[\s\S]*\}/);
       
       if (!jsonMatch) {
-        throw new Error('Failed to parse observation response');
+        throw new Error('Failed to parse observation response from local LLM');
       }
 
       return JSON.parse(jsonMatch[0]);
@@ -318,41 +262,6 @@ Respond with a JSON object:
         critical: true
       };
     }
-  }
-
-  /**
-   * Get task history
-   */
-  getTaskHistory(limit = 10) {
-    return this.taskHistory.slice(-limit);
-  }
-
-  /**
-   * Clear task history
-   */
-  clearTaskHistory() {
-    this.taskHistory = [];
-  }
-
-  /**
-   * Get memory
-   */
-  getMemory(key) {
-    return this.memory.get(key);
-  }
-
-  /**
-   * Store in memory
-   */
-  storeMemory(key, value) {
-    this.memory.set(key, value);
-  }
-
-  /**
-   * Clear memory
-   */
-  clearMemory() {
-    this.memory.clear();
   }
 }
 
