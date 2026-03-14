@@ -2,7 +2,7 @@ services:
   - type: web
     name: ai-browser-agent
     runtime: node
-    plan: standard
+    plan: starter
     buildCommand: npm install
     startCommand: npm start
     envVars:
@@ -37,3 +37,7 @@ services:
     healthCheckStartPeriod: 5
     healthCheckRetries: 3
     dockerfilePath: ./Dockerfile
+    disk:
+      name: models-storage
+      mountPath: /app/models
+      sizeGB: 50

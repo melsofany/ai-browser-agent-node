@@ -48,5 +48,8 @@ EXPOSE 10000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:10000/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
-# Start application
-CMD ["npm", "start"]
+# Make scripts executable
+RUN chmod +x /app/scripts/download_models.sh
+
+# Start application with model download check
+CMD ["/bin/bash", "-c", "/app/scripts/download_models.sh && npm start"]
