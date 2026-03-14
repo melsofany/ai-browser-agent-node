@@ -189,7 +189,7 @@ Return ONLY a valid JSON object (no markdown blocks, no preamble):
         responseText = response.data.choices[0].message.content;
       } else {
         const result = await this.genAI.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-2.0-flash',
           contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nGoal: ${goal}\nContext: ${JSON.stringify(context)}` }] }],
           config: { responseMimeType: "application/json" }
         });
@@ -373,7 +373,7 @@ Example: { "type": "browser", "priority": "high" }`;
 
     try {
       const result = await this.genAI.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.0-flash',
         contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nTask: ${description}` }] }],
         config: { responseMimeType: "application/json" }
       });
@@ -520,7 +520,7 @@ Example:
 
     try {
       const result = await this.genAI.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.0-flash',
         contents: [{ role: 'user', parts: [{ text: `Task: ${description}\nType: ${type || 'auto'}\n\n${systemPrompt}` }] }],
         config: { responseMimeType: "application/json" }
       });
@@ -770,7 +770,7 @@ Return a JSON object with a "subtasks" array.`;
         content = response.data.choices[0].message.content;
       } else if (this.genAI) {
         const result = await this.genAI.models.generateContent({
-          model: 'gemini-3-flash-preview',
+          model: 'gemini-2.0-flash',
           contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nTask: ${taskDescription}` }] }],
           config: { responseMimeType: "application/json" }
         });

@@ -6,9 +6,32 @@
 
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
+const { execSync } = require('child_process');
 
 // Use stealth plugin to avoid detection
 chromium.use(stealth);
+
+// Attempt to find a system Chromium binary (used as fallback on NixOS/Replit)
+function findSystemChromium() {
+  const candidates = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    process.env.CHROME_EXECUTABLE,
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+  ];
+  // Try to locate via `which chromium`
+  try {
+    const which = execSync('which chromium 2>/dev/null || which chromium-browser 2>/dev/null || echo ""', { encoding: 'utf8' }).trim();
+    if (which) candidates.unshift(which);
+  } catch (_) {}
+
+  const fs = require('fs');
+  for (const p of candidates) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return null;
+}
 
 class BrowserAgent {
   constructor(options = {}) {
@@ -24,26 +47,46 @@ class BrowserAgent {
   async initialize(io = null) {
     console.log('[BrowserAgent] Initializing browser...');
     this.io = io;
+
+    const launchArgs = [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-gpu',
+    ];
+
+    // First attempt: use default Playwright bundled browser
     try {
       this.browser = await chromium.launch({
         headless: this.headless,
-        args: [
-          '--no-sandbox', 
-          '--disable-setuid-sandbox', 
-          '--disable-dev-shm-usage',
-          '--disable-blink-features=AutomationControlled'
-        ]
+        args: launchArgs,
       });
-      console.log('[BrowserAgent] Browser initialized successfully');
+      console.log('[BrowserAgent] Browser initialized successfully (Playwright bundled)');
       return { success: true };
     } catch (error) {
-      console.error('[BrowserAgent] Failed to initialize browser:', error);
-      // In many serverless/container environments, shared libraries might be missing
-      if (error.message.includes('libglib-2.0.so.0') || error.message.includes('shared libraries')) {
-        console.warn('[BrowserAgent] Playwright dependencies might be missing. Ensure playwright install-deps is run.');
-      }
-      return { success: false, error: error.message };
+      console.warn('[BrowserAgent] Bundled browser failed, trying system Chromium fallback...', error.message);
     }
+
+    // Second attempt: use system Chromium (for NixOS/Replit environment)
+    const systemChromium = findSystemChromium();
+    if (systemChromium) {
+      try {
+        const { chromium: playwrightChromium } = require('playwright');
+        this.browser = await playwrightChromium.launch({
+          executablePath: systemChromium,
+          headless: this.headless,
+          args: launchArgs,
+        });
+        console.log(`[BrowserAgent] Browser initialized successfully (system: ${systemChromium})`);
+        return { success: true };
+      } catch (error2) {
+        console.error('[BrowserAgent] System Chromium also failed:', error2.message);
+        return { success: false, error: error2.message };
+      }
+    }
+
+    return { success: false, error: 'No working Chromium binary found. Try setting PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.' };
   }
 
   /**
@@ -353,44 +396,29 @@ class BrowserAgent {
     console.log(`[BrowserAgent] Extracting accessibility tree for page: ${pageId}`);
     try {
       const page = this.pages.get(pageId)?.page;
-      if (!page || !page.accessibility) {
-        console.warn('[BrowserAgent] Accessibility API not available on this page/browser version.');
-        return { success: false, error: 'Accessibility API not available' };
+      if (!page) {
+        return { success: false, error: 'Page not found' };
       }
 
-      const snapshot = await page.accessibility.snapshot();
-      
-      // Simplify the tree to reduce tokens further
-      const simplifyNode = (node) => {
-        const simplified = {
-          role: node.role,
-          name: node.name,
-        };
-        
-        if (node.value !== undefined) simplified.value = node.value;
-        if (node.description) simplified.description = node.description;
-        if (node.children && node.children.length > 0) {
-          simplified.children = node.children.map(simplifyNode).filter(n => n.role !== 'text' || (n.name && n.name.trim() !== ''));
-        }
-        
-        return simplified;
-      };
+      // Use the modern ariaSnapshot API (Playwright v1.46+)
+      // Falls back to a DOM-based summary if not available
+      let tree = '';
+      try {
+        tree = await page.ariaSnapshot();
+      } catch (ariaErr) {
+        // Fallback: build a simple text summary from DOM
+        tree = await page.evaluate(() => {
+          const els = Array.from(document.querySelectorAll('h1,h2,h3,button,a,input,textarea,select,[role]'));
+          return els.slice(0, 100).map(el => {
+            const tag = el.tagName.toLowerCase();
+            const role = el.getAttribute('role') || tag;
+            const label = (el.innerText || el.value || el.getAttribute('aria-label') || el.placeholder || '').trim().substring(0, 80);
+            return `@${role} "${label}"`;
+          }).join('\n');
+        }).catch(() => 'Could not extract accessibility tree');
+      }
 
-      // Flatten the tree for easier LLM consumption
-      const flattenTree = (node, depth = 0) => {
-        let result = `${'  '.repeat(depth)}@${node.role} "${node.name || ''}"${node.value !== undefined ? ` value: ${node.value}` : ''}\n`;
-        if (node.children) {
-          node.children.forEach(child => {
-            result += flattenTree(child, depth + 1);
-          });
-        }
-        return result;
-      };
-
-      const simplifiedTree = simplifyNode(snapshot);
-      const flattenedTree = flattenTree(simplifiedTree);
-
-      return { success: true, tree: flattenedTree, raw: snapshot };
+      return { success: true, tree };
     } catch (error) {
       console.error('[BrowserAgent] Failed to extract accessibility tree:', error);
       return { success: false, error: error.message };
@@ -665,6 +693,74 @@ class BrowserAgent {
       return { success: true, fields: Object.keys(data) };
     } catch (error) {
       console.error('[BrowserAgent] Fill form failed:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get a full observation of the current page state.
+   * Called by the ReActLoop on every iteration.
+   */
+  async getObservation(pageId = 'default') {
+    try {
+      // If browser is not running, return a safe fallback
+      if (!this.browser || !this.browser.isConnected()) {
+        return {
+          success: false,
+          error: 'Browser not initialized or disconnected'
+        };
+      }
+
+      let pageData = this.pages.get(pageId);
+      if (!pageData || pageData.page.isClosed()) {
+        // Try to open a new page
+        const openResult = await this.openPage(pageId);
+        if (!openResult.success) {
+          return { success: false, error: 'Could not open browser page: ' + openResult.error };
+        }
+        pageData = this.pages.get(pageId);
+      }
+
+      const page = pageData.page;
+
+      // Get basic page info
+      const pageUrl = page.url();
+      const pageTitle = await page.title().catch(() => '');
+
+      // Get page text content (truncated to avoid huge payloads)
+      const pageText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+
+      // Get interactive elements
+      const interactiveResult = await this.getInteractiveElements(pageId);
+      const interactiveElements = interactiveResult.success ? interactiveResult.elements : [];
+
+      // Get accessibility tree
+      const treeResult = await this.getAccessibilityTree(pageId);
+      const accessibilityTree = treeResult.success ? treeResult.tree : 'Not available';
+
+      // Basic page analysis
+      const analysis = {
+        url: pageUrl,
+        title: pageTitle,
+        hasForm: await page.evaluate(() => document.querySelectorAll('form').length > 0).catch(() => false),
+        inputCount: await page.evaluate(() => document.querySelectorAll('input, textarea, select').length).catch(() => 0),
+        buttonCount: await page.evaluate(() => document.querySelectorAll('button, [role="button"], input[type="submit"]').length).catch(() => 0),
+      };
+
+      return {
+        success: true,
+        pageUrl,
+        pageContent: {
+          title: pageTitle,
+          url: pageUrl,
+          text: pageText.substring(0, 3000),
+        },
+        interactiveElements,
+        accessibilityTree,
+        analysis,
+      };
+    } catch (error) {
+      console.error('[BrowserAgent] getObservation failed:', error.message);
       return { success: false, error: error.message };
     }
   }

@@ -422,7 +422,7 @@ Please analyze the current state.`
         while (retryCount <= maxRetries) {
           try {
             const result = await this.genAI.models.generateContent({
-              model: 'gemini-3-flash-preview',
+              model: 'gemini-2.0-flash',
               contents: [{ role: 'user', parts: [{ text: `${systemPrompt}
 
 Task: ${context.task.description}
@@ -572,7 +572,7 @@ Plan the next action.`
       } else {
         try {
           const result = await this.genAI.models.generateContent({
-            model: 'gemini-3-flash-preview',
+            model: 'gemini-2.0-flash',
             contents: [{ role: 'user', parts: [{ text: `${systemPrompt}
 
 Task: ${context.task.description}

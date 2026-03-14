@@ -39,9 +39,17 @@ Required (set in Secrets):
 - `GITHUB_TOKEN` - For GitHub push functionality
 
 ## Browser Agent
-Uses Playwright (Chromium). Browser initialization happens in background and may fail in some environments without system libraries. The server still runs normally even if browser init fails.
+Uses Playwright (Chromium) with stealth plugin. Has two-layer initialization:
+1. First tries the Playwright bundled Chromium
+2. Falls back to system Chromium (auto-detected via `which chromium` or common paths)
 
-System libraries installed for Playwright: glib, nss, nspr, atk, at-spi2-atk, cups, libdrm, X11 libs, mesa, expat, libxkbcommon, alsa-lib.
+System libraries installed for Playwright: glib, nss, nspr, atk, at-spi2-atk, cups, libdrm, X11 libs, mesa, libgbm, expat, libxkbcommon, alsa-lib, chromium (system package).
+
+## Bug Fixes Applied
+- Added missing `getObservation()` method to `BrowserAgent` (was called by `ReActLoop` but didn't exist)
+- Fixed `getAccessibilityTree()` to use `page.ariaSnapshot()` (Playwright v1.46+ API) instead of removed `page.accessibility.snapshot()`
+- Fixed Gemini model name from `gemini-3-flash-preview` (invalid) to `gemini-2.0-flash` in both `plannerAgent.js` and `reactLoop.js`
+- Added browser initialization fallback to system Chromium for NixOS/Replit environment
 
 ## Deployment
 Configured as `vm` deployment (needs persistent state for WebSocket + browser agent):
