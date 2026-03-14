@@ -68,11 +68,10 @@ const App: React.FC = () => {
       const x = ((e as React.MouseEvent).clientX - rect.left) / rect.width;
       const y = ((e as React.MouseEvent).clientY - rect.top) / rect.height;
       
-      // Map to 1280x720 (default playwright viewport)
-      // Note: This is a simplification, ideally we'd get the actual viewport size from backend
       params = {
         x: Math.round(x * 1280),
-        y: Math.round(y * 720)
+        y: Math.round(y * 720),
+        button: (e as React.MouseEvent).button === 2 ? 'right' : 'left'
       };
     } else if (type === 'wheel') {
       // Scroll events
@@ -634,27 +633,32 @@ const App: React.FC = () => {
                     </div>
                   </div>
 
-                  <div 
-                    className="flex-1 bg-black relative group outline-none min-h-0"
-                    tabIndex={0}
-                    onKeyDown={handleBrowserInteraction}
-                    onKeyUp={handleBrowserInteraction}
-                    onWheel={handleBrowserInteraction}
-                  >
-                  {browserImage ? (
-                    <img 
-                      ref={browserImgRef}
-                      src={browserImage} 
-                      alt="Browser View" 
-                      className="w-full h-full object-contain cursor-crosshair"
-                      referrerPolicy="no-referrer"
-                      onClick={handleBrowserInteraction}
-                      onDoubleClick={handleBrowserInteraction}
-                      onMouseMove={(e) => {
-                        // Only send move events occasionally or when needed
-                        // For now, let's just do clicks to save bandwidth
-                      }}
-                    />
+                    <div 
+                      className="flex-1 bg-black relative group outline-none min-h-0"
+                      tabIndex={0}
+                      onKeyDown={handleBrowserInteraction}
+                      onKeyUp={handleBrowserInteraction}
+                      onWheel={handleBrowserInteraction}
+                    >
+                    {browserImage ? (
+                      <img 
+                        ref={browserImgRef}
+                        src={browserImage} 
+                        alt="Browser View" 
+                        className="w-full h-full object-contain cursor-crosshair"
+                        referrerPolicy="no-referrer"
+                        onClick={handleBrowserInteraction}
+                        onDoubleClick={handleBrowserInteraction}
+                        onMouseDown={handleBrowserInteraction}
+                        onMouseUp={handleBrowserInteraction}
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          handleBrowserInteraction(e);
+                        }}
+                        onMouseMove={(e) => {
+                          // Throttled mouse move could be added here if needed
+                        }}
+                      />
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-600 gap-4">
                       <div className="w-12 h-12 rounded-full border-2 border-slate-800 border-t-indigo-500 animate-spin" />

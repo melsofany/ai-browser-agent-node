@@ -66,7 +66,16 @@ class TaskController extends EventEmitter {
     try {
       switch (type) {
         case 'click':
-          await page.mouse.click(params.x, params.y);
+          await page.mouse.click(params.x, params.y, { button: params.button || 'left' });
+          break;
+        case 'mousedown':
+          await page.mouse.down({ button: params.button || 'left' });
+          break;
+        case 'mouseup':
+          await page.mouse.up({ button: params.button || 'left' });
+          break;
+        case 'contextmenu':
+          await page.mouse.click(params.x, params.y, { button: 'right' });
           break;
         case 'dblclick':
           await page.mouse.dblclick(params.x, params.y);

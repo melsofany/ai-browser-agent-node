@@ -154,6 +154,11 @@ ${languageInstruction}
 Your job is to break down a complex goal into a sequence of logical steps.
 Each step should be clear and actionable.
 
+CRITICAL: When dealing with forms:
+1. Identify if a field is a dropdown (select).
+2. For dates of birth, check if they are split into Day, Month, and Year fields. If so, create separate steps for each.
+3. Use realistic data for all fields.
+
 Return a JSON object:
 {
   "goal": "the original goal",

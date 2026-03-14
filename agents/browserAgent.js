@@ -106,7 +106,7 @@ class BrowserAgent {
       } catch (err) {
         // Ignore errors during streaming
       }
-    }, 500); // 2 frames per second for efficiency
+    }, 200); // 5 frames per second for better live feel
   }
 
   /**
@@ -301,12 +301,24 @@ class BrowserAgent {
               const label = el.id ? document.querySelector(`label[for="${el.id}"]`) : el.closest('label');
               const labelText = label ? label.innerText.trim() : '';
               
+              const options = [];
+              if (el.tagName === 'SELECT') {
+                Array.from(el.options).forEach(opt => {
+                  options.push({
+                    text: opt.text,
+                    value: opt.value,
+                    selected: opt.selected
+                  });
+                });
+              }
+              
               results.push({
                 id: agentId,
                 tag: el.tagName.toLowerCase(),
                 type: el.type || '',
                 text: (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || el.title || '').trim().substring(0, 100),
                 label: labelText,
+                options: options.length > 0 ? options : undefined,
                 role: el.getAttribute('role') || '',
                 name: el.name || '',
                 id_attr: el.id || '',

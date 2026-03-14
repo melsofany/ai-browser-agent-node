@@ -613,8 +613,10 @@ Based on the analysis and current obstacles, determine the next action to take.
 CRITICAL: When filling forms, you MUST:
 1. Carefully analyze each field's requirements (label, placeholder, type).
 2. Map data to the CORRECT fields. Do not put names in email fields or vice versa.
-3. Ensure all required fields are filled before submitting.
-4. If you are unsure about a field, use 'extract' to get more context or 'wait' for the page to stabilize.
+3. For dropdowns (select tags), look at the 'options' provided in the element metadata. Use 'select_option' with the correct 'value'.
+4. For multi-part dates (Day, Month, Year in separate fields), identify all three fields and fill them individually.
+5. Ensure all required fields are filled before submitting.
+6. If you are unsure about a field, use 'extract' to get more context or 'wait' for the page to stabilize.
 
 CRITICAL: When generating data for 'type' actions (like names, emails, passwords, phone numbers), ALWAYS use SEMI-REALISTIC data. 
 - For names: Use common Arabic or English names (e.g., "Ahmed Mansour", "Sarah Smith").
@@ -650,7 +652,7 @@ Return as JSON with: nextAction (object with 'type' and 'params'), reasoning, co
               role: 'user', 
               content: `Task: ${context.task.description}
 Current Thoughts: ${JSON.stringify(thought)}
-Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ id: e.id, tag: e.tag, text: e.text, label: e.label, role: e.role, type: e.type, placeholder: e.placeholder })) || [])}
+Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ id: e.id, tag: e.tag, text: e.text, label: e.label, role: e.role, type: e.type, placeholder: e.placeholder, options: e.options })) || [])}
 
 Plan the next action.` 
             }
@@ -674,7 +676,7 @@ Plan the next action.`
 
 Task: ${context.task.description}
 Current Thoughts: ${JSON.stringify(thought)}
-Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ id: e.id, tag: e.tag, text: e.text, label: e.label, role: e.role, type: e.type, placeholder: e.placeholder })) || [])}` }] }],
+Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ id: e.id, tag: e.tag, text: e.text, label: e.label, role: e.role, type: e.type, placeholder: e.placeholder, options: e.options })) || [])}` }] }],
             config: { responseMimeType: "application/json" }
           });
           responseText = result.text;

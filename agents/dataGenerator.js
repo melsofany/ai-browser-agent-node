@@ -42,9 +42,15 @@ class DataGenerator {
 
   generateBirthDate() {
     const year = Math.floor(Math.random() * (2005 - 1980 + 1)) + 1980;
-    const month = String(Math.floor(Math.random() * 12) + 1).padStart(2, '0');
-    const day = String(Math.floor(Math.random() * 28) + 1).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    const month = Math.floor(Math.random() * 12) + 1;
+    const day = Math.floor(Math.random() * 28) + 1;
+    return {
+      full: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+      year: String(year),
+      month: String(month),
+      day: String(day),
+      monthName: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][month - 1]
+    };
   }
 
   generatePhone() {
@@ -66,7 +72,13 @@ class DataGenerator {
     if (type.includes('surname') || ctx.includes('surname') || type.includes('last') || ctx.includes('last')) return this.generateSurname();
     if (type.includes('firstname') || ctx.includes('first') || type.includes('first')) return this.generateFirstName();
     if (type.includes('name') || ctx.includes('name')) return this.generateName();
-    if (type.includes('date') || ctx.includes('birth') || ctx.includes('dob')) return this.generateBirthDate();
+    if (type.includes('date') || ctx.includes('birth') || ctx.includes('dob')) {
+      const dob = this.generateBirthDate();
+      if (ctx.includes('year')) return dob.year;
+      if (ctx.includes('month')) return ctx.includes('name') ? dob.monthName : dob.month;
+      if (ctx.includes('day')) return dob.day;
+      return dob.full;
+    }
     if (type.includes('phone') || ctx.includes('phone') || type.includes('tel') || ctx.includes('mobile')) return this.generatePhone();
     if (type.includes('gender') || ctx.includes('gender') || type.includes('sex')) return this.generateGender();
     
