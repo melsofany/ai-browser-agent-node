@@ -330,6 +330,57 @@ class BrowserAgent {
   }
 
   /**
+   * Get accessibility tree from the page for AI understanding
+   * This is much more token-efficient than sending the full DOM
+   */
+  async getAccessibilityTree(pageId = 'default') {
+    console.log(`[BrowserAgent] Extracting accessibility tree for page: ${pageId}`);
+    try {
+      const page = this.pages.get(pageId)?.page;
+      if (!page) {
+        return { success: false, error: 'Page not found' };
+      }
+
+      const snapshot = await page.accessibility.snapshot();
+      
+      // Simplify the tree to reduce tokens further
+      const simplifyNode = (node) => {
+        const simplified = {
+          role: node.role,
+          name: node.name,
+        };
+        
+        if (node.value !== undefined) simplified.value = node.value;
+        if (node.description) simplified.description = node.description;
+        if (node.children && node.children.length > 0) {
+          simplified.children = node.children.map(simplifyNode).filter(n => n.role !== 'text' || (n.name && n.name.trim() !== ''));
+        }
+        
+        return simplified;
+      };
+
+      // Flatten the tree for easier LLM consumption
+      const flattenTree = (node, depth = 0) => {
+        let result = `${'  '.repeat(depth)}@${node.role} "${node.name || ''}"${node.value !== undefined ? ` value: ${node.value}` : ''}\n`;
+        if (node.children) {
+          node.children.forEach(child => {
+            result += flattenTree(child, depth + 1);
+          });
+        }
+        return result;
+      };
+
+      const simplifiedTree = simplifyNode(snapshot);
+      const flattenedTree = flattenTree(simplifiedTree);
+
+      return { success: true, tree: flattenedTree, raw: snapshot };
+    } catch (error) {
+      console.error('[BrowserAgent] Failed to extract accessibility tree:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Extract page content
    */
   async extractContent(pageId = 'default') {

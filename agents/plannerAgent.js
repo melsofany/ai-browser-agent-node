@@ -133,6 +133,88 @@ class PlannerAgent {
   }
 
   /**
+   * Generate a high-level plan for a goal
+   * Goal -> Plan -> Actions
+   */
+  async generatePlan(goal, context = {}) {
+    console.log(`[PlannerAgent] Generating plan for goal: ${goal}`);
+    
+    if (!this.deepseekApiKey && !this.genAI) {
+      return this.generatePlanLocally(goal);
+    }
+
+    try {
+      const isArabic = /[\u0600-\u06FF]/.test(goal);
+      const languageInstruction = isArabic 
+        ? "IMPORTANT: You must reason and plan in Arabic. However, the JSON structure must remain in English."
+        : "You must respond in English.";
+
+      const systemPrompt = `You are a high-level task planner for an autonomous AI browser agent.
+${languageInstruction}
+Your job is to break down a complex goal into a sequence of logical steps.
+Each step should be clear and actionable.
+
+Return a JSON object:
+{
+  "goal": "the original goal",
+  "analysis": "brief analysis of the task",
+  "steps": [
+    { "id": 1, "description": "step description", "expectedOutcome": "what should happen" },
+    ...
+  ],
+  "estimatedComplexity": "low|medium|high",
+  "requiredTools": ["browser", "terminal", "filesystem"]
+}`;
+
+      let responseText;
+      if (this.deepseekApiKey) {
+        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+          model: 'deepseek-chat',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Goal: ${goal}\nContext: ${JSON.stringify(context)}` }
+          ],
+          response_format: { type: 'json_object' }
+        }, {
+          headers: { 'Authorization': `Bearer ${this.deepseekApiKey}` }
+        });
+        responseText = response.data.choices[0].message.content;
+      } else {
+        const result = await this.genAI.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nGoal: ${goal}\nContext: ${JSON.stringify(context)}` }] }],
+          config: { responseMimeType: "application/json" }
+        });
+        responseText = result.text;
+      }
+
+      const plan = this.safeJsonParse(responseText);
+      return { success: true, plan };
+    } catch (error) {
+      console.error('[PlannerAgent] Plan generation failed:', error.message);
+      return this.generatePlanLocally(goal);
+    }
+  }
+
+  /**
+   * Generate a simple plan locally
+   */
+  generatePlanLocally(goal) {
+    return {
+      success: true,
+      plan: {
+        goal,
+        analysis: "Local rule-based planning",
+        steps: [
+          { id: 1, description: `Start working on: ${goal}`, expectedOutcome: "Initial progress" }
+        ],
+        estimatedComplexity: "medium",
+        requiredTools: ["browser"]
+      }
+    };
+  }
+
+  /**
    * Analyze a task and create an execution plan
    * @param {Object} task - The task to plan
    * @returns {Promise<Object>} Object containing the execution plan

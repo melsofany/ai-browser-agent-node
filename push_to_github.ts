@@ -31,7 +31,7 @@ async function pushToGithub() {
     execSync('git add .');
 
     console.log('💾 عمل Commit...');
-    const commitMsg = "Update: Enhanced task tracking, UI improvements, and DeepSeek integration";
+    const commitMsg = "Refactor: Implement ReAct Loop architecture, Accessibility Tree, and ChromaDB integration";
     try {
       execSync(`git commit -m "${commitMsg}"`);
     } catch (e) {

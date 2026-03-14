@@ -6,6 +6,7 @@
 const { v4: uuidv4 } = require('uuid');
 const PlannerAgent = require('../agents/plannerAgent');
 const ExecutionAgent = require('../agents/executionAgent');
+const BrowserExecutor = require('../agents/browserExecutor');
 const BrowserAgent = require('../agents/browserAgent');
 const ThinkingAgent = require('../agents/thinkingAgent');
 const ReActLoop = require('../agents/reactLoop');
@@ -16,7 +17,8 @@ class TaskController extends EventEmitter {
   constructor() {
     super();
     this.planner = new PlannerAgent();
-    this.executor = new ExecutionAgent();
+    this.systemExecutor = new ExecutionAgent();
+    this.browserExecutor = new BrowserExecutor();
     this.browser = new BrowserAgent();
     this.thinking = new ThinkingAgent();
     this.selfImprovement = new SelfImprovementAgent(this.planner.memory);
@@ -213,7 +215,10 @@ class TaskController extends EventEmitter {
     // Use ReActLoop for autonomous browser tasks
     if (task.type === 'browser' && task.autonomous !== false) {
       this.log(`Starting autonomous execution for task: ${taskId}`);
-      const taskLoop = new ReActLoop();
+      const taskLoop = new ReActLoop({
+        planner: this.planner,
+        executor: this.browserExecutor
+      });
       try {
         // Forward progress events to UI
         taskLoop.on('progress', (data) => {
@@ -228,7 +233,7 @@ class TaskController extends EventEmitter {
           this.emit('thinking', message);
         });
 
-        const report = await taskLoop.executeTask(task, this.browser, this.executor);
+        const report = await taskLoop.executeTask(task, this.browser);
         task.results = report.results;
         task.status = report.success ? 'completed' : 'failed';
         task.error = report.errors.join(', ');

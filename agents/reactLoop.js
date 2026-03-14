@@ -24,6 +24,8 @@ class ReActLoop extends EventEmitter {
     this.taskContext = null;
     this.memory = new MemorySystem({ backend: config.memoryBackend });
     this.selfImprovement = new SelfImprovementAgent(this.memory);
+    this.planner = options.planner;
+    this.executor = options.executor;
     this.lastObservation = null;
     this.lastThought = null;
     this.lastPlan = null;
@@ -124,16 +126,33 @@ class ReActLoop extends EventEmitter {
    * Execute the ReAct Loop
    * Main entry point for autonomous task execution
    */
-  async executeTask(task, browser, executor) {
+  async executeTask(task, browser) {
     console.log('[ReActLoop] Starting ReAct Loop for task:', task.description);
     
+    // Step 0: Initial Planning (Goal -> Plan)
+    const isArabic = /[\u0600-\u06FF]/.test(task.description);
+    this.emit('progress', { 
+      step: 'PLANNING', 
+      message: isArabic ? 'جاري وضع خطة عمل للمهمة...' : 'Generating high-level plan for the task...' 
+    });
+    
+    const highLevelPlan = await this.planner.generatePlan(task.description);
     this.taskContext = {
       task,
+      highLevelPlan: highLevelPlan.success ? highLevelPlan.plan : null,
       startTime: Date.now(),
       attempts: 0,
       errors: [],
       results: []
     };
+
+    if (highLevelPlan.success) {
+      this.emit('progress', {
+        step: 'PLAN',
+        message: isArabic ? 'تم وضع الخطة بنجاح' : 'High-level plan generated successfully',
+        data: highLevelPlan.plan
+      });
+    }
 
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 3;
@@ -184,9 +203,10 @@ class ReActLoop extends EventEmitter {
         // Update context with latest observation
         this.taskContext.lastObservation = observation;
         this.taskContext.pageTitle = observation.pageContent?.title;
-        this.taskContext.pageUrl = observation.pageContent?.url;
+        this.taskContext.pageUrl = observation.pageUrl || observation.pageContent?.url;
         this.taskContext.analysis = observation.analysis;
         this.taskContext.interactiveElements = observation.interactiveElements;
+        this.taskContext.accessibilityTree = observation.accessibilityTree;
 
         // Step 2: THINK - Analyze the observation and generate thoughts
         this.emit('progress', { 
@@ -280,6 +300,18 @@ class ReActLoop extends EventEmitter {
           console.error('[ReActLoop] Action failed after max retries:', action.error);
           this.taskContext.errors.push(action.error);
           
+          // Step 4.5: RETHINK - Analyze why it failed and adjust
+          this.emit('progress', { 
+            step: 'RETHINK', 
+            message: isArabic ? 'جاري إعادة التفكير بسبب الفشل...' : 'Rethinking due to failure...' 
+          });
+          const rethink = await this.rethink(action.error, observation, this.taskContext);
+          if (rethink.success) {
+            console.log('[ReActLoop] Rethink successful, adjusting plan...');
+            this.taskContext.nextSteps = rethink.nextSteps;
+            continue;
+          }
+
           // Try error recovery
           const recovery = await this.recoverFromError(action.error, browser);
           if (!recovery.success) {
@@ -403,6 +435,9 @@ class ReActLoop extends EventEmitter {
       // Extract interactive elements (Page Abstraction)
       const interactiveElements = await browser.getInteractiveElements();
 
+      // Extract accessibility tree (More token-efficient)
+      const accessibilityTree = await browser.getAccessibilityTree();
+
       // Analyze with AI if available
       let analysis = null;
       if (config.deepseekApiKey || this.genAI) {
@@ -414,6 +449,7 @@ class ReActLoop extends EventEmitter {
         screenshot: screenshot.filePath,
         pageContent: content.content,
         interactiveElements: interactiveElements.elements || [],
+        accessibilityTree: accessibilityTree.tree || '',
         analysis: analysis,
         timestamp: new Date()
       };
@@ -455,6 +491,8 @@ Be EXTREMELY CONCISE. Save tokens.`;
 Current URL: ${context.pageUrl || 'unknown'}
 Current page title: ${context.pageTitle || 'unknown'}
 Page analysis: ${JSON.stringify(context.analysis || {})}
+Accessibility Tree:
+${context.accessibilityTree || 'No tree available'}
 Interactive elements count: ${context.interactiveElements?.length || 0}
 Recent actions: ${JSON.stringify(context.results.slice(-3))}
 Relevant memories: ${JSON.stringify(context.relevantMemories || {})}
@@ -488,6 +526,8 @@ Task: ${context.task.description}
 Current URL: ${context.pageUrl || 'unknown'}
 Current page title: ${context.pageTitle || 'unknown'}
 Page analysis: ${JSON.stringify(context.analysis || {})}
+Accessibility Tree:
+${context.accessibilityTree || 'No tree available'}
 Interactive elements count: ${context.interactiveElements?.length || 0}
 Recent actions: ${JSON.stringify(context.results.slice(-3))}
 Relevant memories: ${JSON.stringify(context.relevantMemories || {})}` }] }],
@@ -689,54 +729,20 @@ Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ 
   /**
    * ACT: Execute the planned action
    */
-  async act(action, browser, executor) {
+  async act(action, browser) {
     console.log('[ReActLoop] ACT: Executing action:', action.type);
     
     try {
-      let result;
+      const result = await this.executor.executeAction(action, browser, this.taskContext);
 
-      switch (action.type) {
-        case 'click':
-          result = await this.actionClick(browser, action.params);
-          break;
-        case 'type':
-          result = await this.actionType(browser, action.params);
-          break;
-        case 'scroll':
-          result = await this.actionScroll(browser, action.params);
-          break;
-        case 'wait':
-          result = await this.actionWait(action.params);
-          break;
-        case 'extract':
-          result = await this.actionExtract(browser);
-          break;
-        case 'navigate':
-          result = await this.actionNavigate(browser, action.params);
-          break;
-        case 'move_mouse':
-          result = await this.actionMoveMouse(browser, action.params);
-          break;
-        case 'press_key':
-          result = await this.actionPressKey(browser, action.params);
-          break;
-        case 'select_option':
-          result = await this.actionSelectOption(browser, action.params);
-          break;
-        case 'upload_file':
-          result = await this.actionUploadFile(browser, action.params);
-          break;
-        case 'find_keyword':
-          result = await this.actionFindKeyword(browser, action.params);
-          break;
-        case 'fill_form':
-          result = await this.actionFillForm(browser, action.params);
-          break;
-        case 'message':
-          result = await this.actionMessage(action.params);
-          break;
-        default:
-          return { success: false, error: `Unknown action: ${action.type}` };
+      // Handle message actions specifically if they emit events
+      if (action.type === 'message') {
+        this.emit('message', { 
+          type: action.params?.type || 'info', 
+          content: action.params?.content, 
+          data: action.params?.data, 
+          timestamp: new Date() 
+        });
       }
 
       return {
@@ -748,202 +754,6 @@ Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ 
     } catch (error) {
       return { success: false, error: error.message, action: action.type };
     }
-  }
-
-  /**
-   * Action: Click at coordinates or element ID
-   */
-  async actionClick(browser, params) {
-    const { x, y, elementId } = params;
-    
-    try {
-      const page = browser.pages.get('default')?.page;
-      if (!page) {
-        return { success: false, error: 'Page not found' };
-      }
-
-      if (elementId) {
-        const selector = `[data-agent-id="${elementId}"]`;
-        await page.click(selector);
-        return { success: true, message: `Clicked element with ID: ${elementId}` };
-      }
-
-      if (x && y) {
-        await page.mouse.click(x, y);
-        await page.waitForTimeout(500);
-        return { success: true, message: `Clicked at (${x}, ${y})` };
-      }
-
-      return { success: false, error: 'Missing coordinates or elementId' };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Action: Type text into element or focused field
-   */
-  async actionType(browser, params) {
-    let { text, elementId } = params;
-    if (!text) {
-      return { success: false, error: 'No text provided' };
-    }
-
-    // Replace placeholders with realistic data if needed
-    if (text.startsWith('[') && text.endsWith(']')) {
-      const fieldType = text.substring(1, text.length - 1);
-      text = dataGenerator.getRealisticValue(fieldType, elementId || '');
-    }
-
-    try {
-      const page = browser.pages.get('default')?.page;
-      if (!page) {
-        return { success: false, error: 'Page not found' };
-      }
-
-      if (elementId) {
-        const selector = `[data-agent-id="${elementId}"]`;
-        await page.fill(selector, text);
-        return { success: true, message: `Typed into element ${elementId}: ${text}` };
-      }
-
-      await page.keyboard.type(text);
-      return { success: true, message: `Typed: ${text}` };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Action: Scroll
-   */
-  async actionScroll(browser, params) {
-    const { direction = 'down', amount = 3 } = params;
-
-    try {
-      const page = browser.pages.get('default')?.page;
-      if (!page) {
-        return { success: false, error: 'Page not found' };
-      }
-
-      const scrollAmount = direction === 'down' ? amount : -amount;
-      await page.evaluate((amount) => {
-        window.scrollBy(0, amount * 100);
-      }, scrollAmount);
-
-      return { success: true, message: `Scrolled ${direction} by ${amount}` };
-    } catch (error) {
-      return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Action: Wait
-   */
-  async actionWait(params) {
-    const { duration = 1000 } = params;
-    await new Promise(resolve => setTimeout(resolve, duration));
-    return { success: true, message: `Waited ${duration}ms` };
-  }
-
-  /**
-   * Action: Extract content
-   */
-  async actionExtract(browser) {
-    const content = await browser.extractContent();
-    return content;
-  }
-
-  /**
-   * Action: Message (info, ask, result)
-   */
-  async actionMessage(params) {
-    const { type = 'info', content, data } = params;
-    console.log(`[ReActLoop] MESSAGE [${type}]: ${content}`);
-    
-    // Emit to UI
-    this.emit('message', { type, content, data, timestamp: new Date() });
-    
-    if (type === 'ask') {
-      // In a real scenario, we would wait for a response
-      // For now, we just acknowledge the question
-      return { success: true, message: 'Question sent to user', type: 'ask' };
-    }
-    
-    return { success: true, message: 'Message sent', type };
-  }
-
-  /**
-   * Action: Move mouse
-   */
-  async actionMoveMouse(browser, params) {
-    const { x, y } = params;
-    if (x === undefined || y === undefined) return { success: false, error: 'Missing coordinates' };
-    return browser.moveMouse(x, y);
-  }
-
-  /**
-   * Action: Press key
-   */
-  async actionPressKey(browser, params) {
-    const { key } = params;
-    if (!key) return { success: false, error: 'Missing key' };
-    return browser.pressKey(key);
-  }
-
-  /**
-   * Action: Select option
-   */
-  async actionSelectOption(browser, params) {
-    const { elementId, value } = params;
-    if (!elementId || value === undefined) return { success: false, error: 'Missing elementId or value' };
-    const selector = `[data-agent-id="${elementId}"]`;
-    return browser.selectOption(selector, value);
-  }
-
-  /**
-   * Action: Upload file
-   */
-  async actionUploadFile(browser, params) {
-    const { elementId, filePath } = params;
-    if (!elementId || !filePath) return { success: false, error: 'Missing elementId or filePath' };
-    const selector = `[data-agent-id="${elementId}"]`;
-    return browser.uploadFile(selector, filePath);
-  }
-
-  /**
-   * Action: Find keyword
-   */
-  async actionFindKeyword(browser, params) {
-    const { keyword } = params;
-    if (!keyword) return { success: false, error: 'Missing keyword' };
-    return browser.findKeyword(keyword);
-  }
-
-  /**
-   * Action: Fill form
-   */
-  async actionFillForm(browser, params) {
-    const { data } = params;
-    if (!data) return { success: false, error: 'Missing form data' };
-    
-    const mappedData = {};
-    for (const [id, val] of Object.entries(data)) {
-      mappedData[`[data-agent-id="${id}"]`] = val;
-    }
-    return browser.fillForm(mappedData);
-  }
-
-  /**
-   * Action: Navigate
-   */
-  async actionNavigate(browser, params) {
-    const { url } = params;
-    if (!url) {
-      return { success: false, error: 'No URL provided' };
-    }
-
-    return await browser.navigate(url);
   }
 
   /**
@@ -1014,6 +824,51 @@ Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ 
     const content2 = obs2.pageContent?.text || '';
     
     return content1 !== content2;
+  }
+
+  /**
+   * RETHINK: Analyze failure and adjust strategy
+   */
+  async rethink(error, observation, context) {
+    console.log('[ReActLoop] RETHINK: Analyzing failure...');
+    if (!config.deepseekApiKey && !this.genAI) return { success: false };
+
+    try {
+      const isArabic = /[\u0600-\u06FF]/.test(context.task.description);
+      const systemPrompt = `You are an AI agent in a "Rethink" phase. An action just failed.
+Analyze the error and the current page state to determine why it failed and how to recover.
+Error: ${error}
+Task: ${context.task.description}
+
+Return a JSON object: { "reason": "why it failed", "nextSteps": "new strategy", "success": true }.`;
+
+      let responseText;
+      if (config.deepseekApiKey) {
+        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+          model: 'deepseek-chat',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: `Current URL: ${context.pageUrl}\nAccessibility Tree: ${context.accessibilityTree}` }
+          ],
+          response_format: { type: 'json_object' }
+        }, {
+          headers: { 'Authorization': `Bearer ${config.deepseekApiKey}` }
+        });
+        responseText = response.data.choices[0].message.content;
+      } else {
+        const result = await this.genAI.models.generateContent({
+          model: 'gemini-3-flash-preview',
+          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nURL: ${context.pageUrl}\nTree: ${context.accessibilityTree}` }] }],
+          config: { responseMimeType: "application/json" }
+        });
+        responseText = result.text;
+      }
+
+      return this.safeJsonParse(responseText);
+    } catch (e) {
+      console.error('[ReActLoop] Rethink failed:', e.message);
+      return { success: false };
+    }
   }
 
   /**

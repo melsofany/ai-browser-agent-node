@@ -4,12 +4,40 @@
  */
 
 const { GoogleGenAI } = require("@google/genai");
+let chromadb;
+try {
+  chromadb = require("chromadb");
+} catch (e) {
+  console.warn('[VectorMemory] ChromaDB not found, falling back to in-memory store');
+}
 
 class VectorMemory {
   constructor(apiKey) {
     this.apiKey = apiKey || process.env.GEMINI_API_KEY;
     this.ai = this.apiKey ? new GoogleGenAI({ apiKey: this.apiKey }) : null;
-    this.vectors = []; // In-memory vector store: [{ text, vector, metadata }]
+    this.vectors = []; // In-memory fallback
+    this.chromaClient = null;
+    this.collection = null;
+    this.useChroma = false;
+
+    if (chromadb) {
+      this.initChroma();
+    }
+  }
+
+  async initChroma() {
+    try {
+      this.chromaClient = new chromadb.ChromaClient();
+      this.collection = await this.chromaClient.getOrCreateCollection({
+        name: "agent_memory",
+        metadata: { "description": "AI Agent Memory Store" }
+      });
+      this.useChroma = true;
+      console.log('[VectorMemory] ChromaDB initialized successfully');
+    } catch (error) {
+      console.error('[VectorMemory] ChromaDB initialization failed:', error.message);
+      this.useChroma = false;
+    }
   }
 
   /**
@@ -55,6 +83,17 @@ class VectorMemory {
     
     try {
       const vector = await this.getEmbedding(text);
+      
+      if (this.useChroma && this.collection) {
+        await this.collection.add({
+          ids: [Date.now().toString()],
+          embeddings: [vector],
+          metadatas: [metadata],
+          documents: [text]
+        });
+      }
+
+      // Always keep in-memory for fast access/fallback
       this.vectors.push({
         text,
         vector,
@@ -74,6 +113,26 @@ class VectorMemory {
   async search(query, limit = 5) {
     console.log(`[VectorMemory] Searching for: ${query}`);
     
+    if (this.useChroma && this.collection) {
+      try {
+        const queryVector = await this.getEmbedding(query);
+        const results = await this.collection.query({
+          queryEmbeddings: [queryVector],
+          nResults: limit
+        });
+        
+        if (results && results.documents && results.documents[0]) {
+          return results.documents[0].map((doc, i) => ({
+            text: doc,
+            metadata: results.metadatas[0][i],
+            similarity: 1 - (results.distances ? results.distances[0][i] : 0)
+          }));
+        }
+      } catch (error) {
+        console.error('[VectorMemory] Chroma search failed, falling back to in-memory:', error.message);
+      }
+    }
+
     if (this.vectors.length === 0) return [];
 
     try {
