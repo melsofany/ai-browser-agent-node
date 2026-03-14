@@ -418,6 +418,12 @@ class BrowserAgent {
         }).catch(() => 'Could not extract accessibility tree');
       }
 
+      // Limit tree size to avoid sending huge payloads to AI
+      const MAX_TREE_CHARS = 3000;
+      if (tree.length > MAX_TREE_CHARS) {
+        tree = tree.substring(0, MAX_TREE_CHARS) + '\n...[truncated]';
+      }
+
       return { success: true, tree };
     } catch (error) {
       console.error('[BrowserAgent] Failed to extract accessibility tree:', error);
@@ -442,8 +448,7 @@ class BrowserAgent {
       const content = await page.evaluate(() => ({
         title: document.title,
         url: window.location.href,
-        text: document.body.innerText,
-        html: document.documentElement.outerHTML,
+        text: document.body.innerText?.substring(0, 5000) || '',
       }));
 
       return { success: true, content };
@@ -727,8 +732,7 @@ class BrowserAgent {
       const pageUrl = page.url();
       const pageTitle = await page.title().catch(() => '');
 
-      // Get page text content (truncated to avoid huge payloads)
-      const pageText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+      // NOTE: We do NOT send full page text to AI - use accessibility tree instead
 
       // Get interactive elements
       const interactiveResult = await this.getInteractiveElements(pageId);
@@ -753,7 +757,6 @@ class BrowserAgent {
         pageContent: {
           title: pageTitle,
           url: pageUrl,
-          text: pageText.substring(0, 3000),
         },
         interactiveElements,
         accessibilityTree,

@@ -6,14 +6,15 @@
 
 const axios = require('axios');
 const config = require('../config/config');
+const IntegrationsManager = require('./integrationsManager');
 
 class PlannerAgent {
   constructor() {
     this.taskQueue = [];
     this.executedTasks = [];
-    
-    // Initialize DeepSeek
     this.deepseekApiKey = config.deepseekApiKey;
+    this.integrations = null;
+    this._initIntegrations();
     
     // Common platform mappings
     this.platformUrls = {
@@ -26,6 +27,50 @@ class PlannerAgent {
       'x': 'https://x.com',
       'linkedin': 'https://www.linkedin.com',
     };
+  }
+
+  async _initIntegrations() {
+    try {
+      this.integrations = new IntegrationsManager();
+      await this.integrations.initialize();
+    } catch (err) {
+      console.warn('[PlannerAgent] Local integrations init failed:', err.message);
+    }
+  }
+
+  /**
+   * Unified AI call: DeepSeek first, then Ollama fallback
+   */
+  async callAI(messages, options = {}) {
+    if (config.deepseekApiKey) {
+      try {
+        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+          model: 'deepseek-chat',
+          messages,
+          temperature: options.temperature ?? 0.4,
+          max_tokens: options.max_tokens ?? 1000
+        }, {
+          headers: {
+            'Authorization': `Bearer ${config.deepseekApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: options.timeout || 60000
+        });
+        return response.data.choices[0].message.content;
+      } catch (err) {
+        console.warn('[PlannerAgent] DeepSeek failed, trying local model:', err.message);
+      }
+    }
+
+    if (this.integrations?.isOllamaAvailable()) {
+      try {
+        return await this.integrations.chat(messages, options);
+      } catch (err) {
+        console.warn('[PlannerAgent] Ollama failed:', err.message);
+      }
+    }
+
+    throw new Error('No AI model available. Configure DEEPSEEK_API_KEY or install Ollama.');
   }
 
   /**
@@ -133,52 +178,27 @@ class PlannerAgent {
   async generatePlan(goal, context = {}) {
     console.log(`[PlannerAgent] Generating plan for goal: ${goal}`);
     
-    if (!this.deepseekApiKey) {
+    const hasAI = this.deepseekApiKey || this.integrations?.isOllamaAvailable();
+    if (!hasAI) {
       return this.generatePlanLocally(goal);
     }
 
     try {
       const isArabic = /[\u0600-\u06FF]/.test(goal);
-      const languageInstruction = isArabic 
-        ? "IMPORTANT: You must reason and plan in Arabic. However, the JSON structure must remain in English."
-        : "You must respond in English.";
+      const languageInstruction = isArabic
+        ? "Reason and plan in Arabic. JSON structure stays in English."
+        : "Respond in English.";
 
       const systemPrompt = `You are a high-level task planner for an autonomous AI browser agent.
 ${languageInstruction}
-Your job is to break down a complex goal into a sequence of logical steps.
-Each step should be clear and actionable.
+Break down the goal into logical steps. For forms: handle dropdowns and split date fields separately.
+Return ONLY valid JSON (no markdown):
+{"goal":"...","analysis":"...","steps":[{"id":1,"description":"...","expectedOutcome":"..."}],"estimatedComplexity":"low|medium|high","requiredTools":["browser"]}`;
 
-CRITICAL: When dealing with forms:
-1. Identify if a field is a dropdown (select).
-2. For dates of birth, check if they are split into Day, Month, and Year fields. If so, create separate steps for each.
-3. Use realistic data for all fields.
-
-Return ONLY a valid JSON object (no markdown blocks, no preamble):
-{
-  "goal": "the original goal",
-  "analysis": "brief analysis of the task",
-  "steps": [
-    { "id": 1, "description": "step description", "expectedOutcome": "what should happen" },
-    ...
-  ],
-  "estimatedComplexity": "low|medium|high",
-  "requiredTools": ["browser", "terminal", "filesystem"]
-}`;
-
-      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Goal: ${goal}\nContext: ${JSON.stringify(context)}` }
-        ],
-      }, {
-        headers: { 
-          'Authorization': `Bearer ${this.deepseekApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 60000
-      });
-      const responseText = response.data.choices[0].message.content;
+      const responseText = await this.callAI([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Goal: ${goal}\nContext: ${JSON.stringify(context)}` }
+      ], { timeout: 60000, max_tokens: 1000 });
 
       const plan = this.safeJsonParse(responseText);
       return { success: true, plan };
@@ -216,9 +236,10 @@ Return ONLY a valid JSON object (no markdown blocks, no preamble):
 
     console.log(`[PlannerAgent] Planning task: ${description}`);
 
-    // Auto-determine priority and type using DeepSeek
+    // Auto-determine priority and type using AI
     if (!type || type === 'auto') {
-      if (this.deepseekApiKey) {
+      const hasAI = this.deepseekApiKey || this.integrations?.isOllamaAvailable();
+      if (hasAI) {
         try {
           let analysis = null;
           analysis = await this.analyzeTaskWithDeepSeek(description, type);
@@ -253,7 +274,8 @@ Return ONLY a valid JSON object (no markdown blocks, no preamble):
 
     let steps = [];
 
-    if (this.deepseekApiKey) {
+    const hasAI = this.deepseekApiKey || this.integrations?.isOllamaAvailable();
+    if (hasAI) {
       try {
         steps = await this.planWithDeepSeek(description, type);
 
@@ -295,31 +317,19 @@ Return ONLY a valid JSON object (no markdown blocks, no preamble):
    * Analyze task to auto-determine type and priority using DeepSeek
    */
   async analyzeTaskWithDeepSeek(description, type) {
-    console.log('[PlannerAgent] Analyzing task with DeepSeek...');
-    
-    const systemPrompt = `You are a task analyzer. Analyze the user's request and determine:
-1. The task type: 'browser' for web automation, 'system' for system commands, 'development' for git/file operations, or 'auto' for auto-detection
-2. The priority: 'high' for urgent/important, 'normal' for regular, 'low' for background tasks
+    console.log('[PlannerAgent] Analyzing task with AI...');
 
-Return ONLY a valid JSON object with "type" and "priority" fields.
-Example: { "type": "browser", "priority": "high" }`;
+    const systemPrompt = `You are a task analyzer. Determine:
+1. Task type: 'browser' (web automation), 'system' (commands), 'development' (git/files), or 'auto'
+2. Priority: 'high', 'normal', or 'low'
+Return ONLY valid JSON: { "type": "browser", "priority": "normal" }`;
 
     try {
-      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Task: ${description}` }
-        ],
-      }, {
-        headers: {
-          'Authorization': `Bearer ${this.deepseekApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 60000 // Increased timeout to 60s
-      });
+      const content = await this.callAI([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Task: ${description}` }
+      ], { timeout: 30000, max_tokens: 100 });
 
-      const content = response.data.choices[0].message.content;
       const parsed = this.safeJsonParse(content);
       
       if (parsed && parsed.type && parsed.priority) {
@@ -375,36 +385,25 @@ CRITICAL: Return ONLY the raw JSON array. Do not include markdown code blocks or
 
     while (retryCount <= maxRetries) {
       try {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Task: ${description}\nType: ${type || 'auto'}` }
-          ],
-        }, {
-          headers: {
-            'Authorization': `Bearer ${this.deepseekApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 120000 // Keep timeout at 2 minutes
-        });
+        const content = await this.callAI([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Task: ${description}\nType: ${type || 'auto'}` }
+        ], { timeout: 120000, max_tokens: 2000 });
 
-        const content = response.data.choices[0].message.content;
         const parsed = this.safeJsonParse(content);
-        
         if (Array.isArray(parsed)) return parsed;
-        if (parsed.steps && Array.isArray(parsed.steps)) return parsed.steps;
+        if (parsed && parsed.steps && Array.isArray(parsed.steps)) return parsed.steps;
         return [];
       } catch (err) {
         if (err.message.includes('aborted') || err.message.includes('timeout')) {
           retryCount++;
           if (retryCount <= maxRetries) {
-            console.warn(`[PlannerAgent] DeepSeek API timeout, retrying (${retryCount}/${maxRetries})...`);
+            console.warn(`[PlannerAgent] AI timeout, retrying (${retryCount}/${maxRetries})...`);
             await new Promise(resolve => setTimeout(resolve, 2000));
             continue;
           }
         }
-        console.error('[PlannerAgent] DeepSeek API Error:', err.message);
+        console.error('[PlannerAgent] AI planning error:', err.message);
         throw err;
       }
     }
@@ -617,23 +616,10 @@ For each sub-task, provide:
 Return a JSON object with a "subtasks" array.`;
 
     try {
-      let content = '';
-      if (this.deepseekApiKey) {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Task: ${taskDescription}` }
-          ],
-        }, {
-          headers: {
-            'Authorization': `Bearer ${this.deepseekApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 60000
-        });
-        content = response.data.choices[0].message.content;
-      }
+      const content = await this.callAI([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Task: ${taskDescription}` }
+      ], { timeout: 60000, max_tokens: 1500 });
 
       const parsed = this.safeJsonParse(content);
       return parsed.subtasks || [];

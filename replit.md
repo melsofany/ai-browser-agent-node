@@ -1,7 +1,7 @@
 # AI Browser Agent Platform
 
 ## Overview
-A full-stack AI agent platform with a React frontend and Express/Socket.io backend. The app allows users to submit tasks to an AI browser agent that can browse the web, research topics, and execute complex tasks.
+A full-stack autonomous AI agent platform with a React frontend and Express/Socket.io backend. The agent can browse the web, fill forms, research topics, and execute complex tasks. Supports both cloud AI (DeepSeek) and local AI (Ollama with Llama/Mistral/Qwen/DeepSeek-R1).
 
 ## Architecture
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS
@@ -13,44 +13,58 @@ A full-stack AI agent platform with a React frontend and Express/Socket.io backe
 - `server.ts` - Main server entry (Express + Vite middleware + Socket.io)
 - `src/` - React frontend (App.tsx, main.tsx, index.css)
 - `api/` - Express routes and server class
-- `agents/` - AI agent implementations (browser, memory, planning, etc.)
-- `controllers/` - Task controller
+- `agents/` - AI agent implementations:
+  - `reactLoop.js` - Core ReAct loop (Observe→Think→Plan→Act→Verify)
+  - `plannerAgent.js` - High-level goal → plan breakdown
+  - `browserAgent.js` - Playwright browser control
+  - `memorySystem.js` - SQLite + vector memory
+  - `toolRouter.js` - Tool routing (browser/terminal/filesystem/search/code)
+  - `ollamaIntegration.js` - Local AI via Ollama
+  - `integrationsManager.js` - Unified AI provider manager
+  - `thinkingAgent.js` - Thinking logs display
+  - `visionNavigator.js` - Visual element analysis
 - `config/config.js` - App configuration
-- `integrations/` - External AI model integrations (Llama, Mistral, Qwen)
-- `models/` - Local model weights directory (not included, must be downloaded)
+- `integrations/` - Local model integrations (Llama, Mistral, Qwen, LangGraph)
 
 ## Running the App
 ```bash
 PORT=5000 npm run dev
 ```
 
-The workflow "Start application" is configured to run this automatically.
-
-## Key Configuration
-- Port: **5000** (set via `PORT` env var or defaults in `config/config.js`)
-- Vite config (`vite.config.ts`): `allowedHosts: true`, `host: '0.0.0.0'` for Replit proxy
-- Vite watches ignore `.local/`, `.cache/`, `node_modules/`, `models/` directories
+## AI Model Priority
+1. **DeepSeek** (cloud) - if `DEEPSEEK_API_KEY` is set
+2. **Ollama** (local) - if Ollama is running at `OLLAMA_URL`
+3. **Rule-based fallback** - no AI required for basic tasks
 
 ## Environment Variables
-Required (set in Secrets):
-- `DEEPSEEK_API_KEY` - Primary AI model for planning and reasoning
-- `OPENAI_API_KEY` - For OpenAI-based integrations
-- `GITHUB_TOKEN` - For GitHub push functionality
+```
+DEEPSEEK_API_KEY=     # Cloud AI (primary)
+OLLAMA_URL=http://localhost:11434  # Local AI server
+OLLAMA_MODEL=llama3   # Model to use (llama3, mistral, qwen2, deepseek-r1...)
+USE_LOCAL_MODELS=true
+MEMORY_BACKEND=sqlite  # 'memory' or 'sqlite'
+GITHUB_TOKEN=          # For GitHub push
+```
+
+## Key Technical Decisions
+- **Accessibility Tree only** (not full DOM) sent to AI → reduces tokens by ~90%
+- Tree limited to 3000 chars, interactive elements limited to 25 per request
+- `callAI()` helper in reactLoop + plannerAgent tries DeepSeek first, then Ollama
+- Memory: SQLite for persistence, keyword-based vector search fallback
 
 ## Browser Agent
-Uses Playwright (Chromium) with stealth plugin. Has two-layer initialization:
-1. First tries the Playwright bundled Chromium
-2. Falls back to system Chromium (auto-detected via `which chromium` or common paths)
-
-System libraries installed for Playwright: glib, nss, nspr, atk, at-spi2-atk, cups, libdrm, X11 libs, mesa, libgbm, expat, libxkbcommon, alsa-lib, chromium (system package).
+Uses Playwright (Chromium) with stealth plugin. Two-layer initialization:
+1. Playwright bundled Chromium (primary)
+2. System Chromium fallback (for NixOS/Replit)
 
 ## Bug Fixes Applied
-- Added missing `getObservation()` method to `BrowserAgent` (was called by `ReActLoop` but didn't exist)
-- Fixed `getAccessibilityTree()` to use `page.ariaSnapshot()` (Playwright v1.46+ API) instead of removed `page.accessibility.snapshot()`
-- Added browser initialization fallback to system Chromium for NixOS/Replit environment
-- Removed Gemini (Google AI) dependency - media tools now return a disabled message
+- Fixed syntax error in `reactLoop.js` constructor (extra closing brace)
+- Removed full DOM/outerHTML from AI context (was causing 100k+ token issues)
+- Removed Gemini dependency entirely
+- Added Ollama integration for local model support
+- Unified AI call with DeepSeek→Ollama→fallback chain
 
 ## Deployment
-Configured as `vm` deployment (needs persistent state for WebSocket + browser agent):
+Configured as `vm` deployment:
 - Build: `npm run build`
 - Run: `PORT=5000 NODE_ENV=production npm start`

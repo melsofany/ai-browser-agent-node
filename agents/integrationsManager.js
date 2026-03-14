@@ -1,32 +1,43 @@
 /**
- * Integrations Manager (Local-Only Mode)
- * Unified manager for all AI model integrations
- * This version is strictly local and does not require external API keys.
+ * Integrations Manager
+ * Manages all AI model integrations: cloud (DeepSeek) + local (Ollama/Llama/Mistral/Qwen)
+ * Falls back to local models when cloud API is unavailable.
  */
 
 const LlamaIntegration = require('./llamaIntegration');
 const MistralIntegration = require('./mistralIntegration');
 const QwenIntegration = require('./qwenIntegration');
+const OllamaIntegration = require('./ollamaIntegration');
 const OpenInterpreterIntegration = require('./openInterpreterIntegration');
 const AutoGPTIntegration = require('./autogptIntegration');
 const LangGraphIntegration = require('./langgraphIntegration');
+const config = require('../config/config');
 
 class IntegrationsManager {
-  constructor(config = {}) {
-    this.config = config;
+  constructor(cfg = {}) {
+    this.config = cfg;
     this.integrations = new Map();
-    this.activeProvider = config.activeProvider || 'llama';
+    this.activeProvider = cfg.activeProvider || 'ollama';
     this.initialized = false;
+    this.ollama = null;
   }
 
   /**
-   * Initialize all integrations locally
+   * Initialize all integrations
    */
   async initialize() {
     try {
-      console.log('[IntegrationsManager] Initializing all integrations locally...');
-      
-      // Initialize Llama
+      console.log('[IntegrationsManager] Initializing integrations...');
+
+      // Primary local provider: Ollama
+      this.ollama = new OllamaIntegration({
+        baseUrl: config.ollamaUrl,
+        model: config.ollamaModel
+      });
+      await this.ollama.initialize();
+      this.integrations.set('ollama', this.ollama);
+
+      // Initialize Llama (file-based weights)
       const llama = new LlamaIntegration(this.config.llama || {});
       await llama.initialize();
       this.integrations.set('llama', llama);
@@ -57,7 +68,7 @@ class IntegrationsManager {
       this.integrations.set('langgraph', langgraph);
 
       this.initialized = true;
-      console.log('[IntegrationsManager] All local integrations initialized successfully.');
+      console.log('[IntegrationsManager] All integrations initialized.');
       return true;
     } catch (error) {
       console.error('[IntegrationsManager] Initialization failed:', error.message);
@@ -66,89 +77,84 @@ class IntegrationsManager {
   }
 
   /**
-   * Get integration by name
+   * Get a specific integration by name
    */
   getIntegration(name) {
     return this.integrations.get(name);
   }
 
   /**
-   * Get active provider
+   * Check if Ollama is available
    */
-  getActiveProvider() {
-    return this.integrations.get(this.activeProvider);
+  isOllamaAvailable() {
+    return this.ollama?.isAvailable() || false;
   }
 
   /**
-   * Generate text using active local provider
-   */
-  async generateText(prompt, options = {}) {
-    const provider = this.getActiveProvider();
-    if (!provider || !provider.generateText) {
-      throw new Error(`Active provider ${this.activeProvider} not available for text generation`);
-    }
-
-    console.log(`[IntegrationsManager] Generating text with local ${this.activeProvider}...`);
-    return await provider.generateText(prompt, options);
-  }
-
-  /**
-   * Chat using active local provider
+   * Chat using the best available local model (Ollama first)
    */
   async chat(messages, options = {}) {
-    const provider = this.getActiveProvider();
-    if (!provider || !provider.chat) {
-      throw new Error(`Active provider ${this.activeProvider} not available for chat`);
+    if (this.ollama?.isAvailable()) {
+      console.log('[IntegrationsManager] Using Ollama for chat...');
+      return await this.ollama.chat(messages, options);
     }
 
-    console.log(`[IntegrationsManager] Chatting with local ${this.activeProvider}...`);
-    return await provider.chat(messages, options);
+    throw new Error('No local AI model available. Please install Ollama (https://ollama.ai) or provide a DEEPSEEK_API_KEY.');
   }
 
   /**
-   * Interpret instruction using Open Interpreter and local LLM
+   * Generate text using best available local model
+   */
+  async generateText(prompt, options = {}) {
+    if (this.ollama?.isAvailable()) {
+      console.log('[IntegrationsManager] Using Ollama for text generation...');
+      return await this.ollama.generateText(prompt, options);
+    }
+
+    throw new Error('No local AI model available.');
+  }
+
+  /**
+   * Interpret instruction using Open Interpreter + local LLM
    */
   async interpretInstruction(instruction, context = {}) {
     const interpreter = this.integrations.get('open-interpreter');
-    const localLLM = this.getActiveProvider();
-    
     if (!interpreter) throw new Error('Open Interpreter not available');
-    if (!localLLM) throw new Error('Local LLM not available for interpretation');
 
-    return await interpreter.interpretInstruction(instruction, context, localLLM);
+    return await interpreter.interpretInstruction(instruction, context, this.ollama);
   }
 
   /**
-   * Execute autonomous task using AutoGPT and local LLM
+   * Execute autonomous task using AutoGPT + local LLM
    */
   async executeAutonomousTask(goal, constraints = {}) {
     const autogpt = this.integrations.get('autogpt');
-    const localLLM = this.getActiveProvider();
-    
     if (!autogpt) throw new Error('AutoGPT not available');
-    if (!localLLM) throw new Error('Local LLM not available for autonomous task');
 
-    return await autogpt.executeAutonomousTask(goal, constraints, localLLM);
+    return await autogpt.executeAutonomousTask(goal, constraints, this.ollama);
   }
 
   /**
-   * Health check all local integrations
+   * Health check all integrations
    */
   async healthCheck() {
-    const health = {
+    return {
       timestamp: new Date(),
-      mode: 'local_only',
-      integrations: {}
+      ollama: {
+        available: this.isOllamaAvailable(),
+        model: this.ollama?.model || 'none',
+        url: config.ollamaUrl
+      },
+      deepseek: {
+        available: !!config.deepseekApiKey
+      },
+      integrations: Object.fromEntries(
+        Array.from(this.integrations.entries()).map(([name, integration]) => [
+          name,
+          { status: integration.initialized ? 'ready' : 'not_ready' }
+        ])
+      )
     };
-
-    for (const [name, integration] of this.integrations) {
-      health.integrations[name] = {
-        status: integration.initialized ? 'healthy' : 'waiting_for_weights',
-        initialized: integration.initialized
-      };
-    }
-
-    return health;
   }
 }
 

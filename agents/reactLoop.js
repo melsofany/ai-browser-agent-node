@@ -8,6 +8,7 @@ const axios = require('axios');
 const config = require('../config/config');
 const MemorySystem = require('./memorySystem');
 const SelfImprovementAgent = require('./selfImprovementAgent');
+const IntegrationsManager = require('./integrationsManager');
 const fs = require('fs');
 const dataGenerator = require('./dataGenerator');
 
@@ -30,8 +31,57 @@ class ReActLoop extends EventEmitter {
     this.lastPlan = null;
     this.lastAction = null;
     this.lastVerification = null;
+    this.integrations = null;
+    this._initIntegrations();
+  }
 
+  /**
+   * Initialize local model integrations in background
+   */
+  async _initIntegrations() {
+    try {
+      this.integrations = new IntegrationsManager();
+      await this.integrations.initialize();
+    } catch (err) {
+      console.warn('[ReActLoop] Local integrations init failed:', err.message);
     }
+  }
+
+  /**
+   * Unified AI call: tries DeepSeek first, then Ollama, then local fallback
+   */
+  async callAI(messages, options = {}) {
+    // Try DeepSeek (cloud)
+    if (config.deepseekApiKey) {
+      try {
+        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+          model: 'deepseek-chat',
+          messages,
+          temperature: options.temperature ?? 0.4,
+          max_tokens: options.max_tokens ?? 800
+        }, {
+          headers: {
+            'Authorization': `Bearer ${config.deepseekApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: options.timeout || 60000
+        });
+        return response.data.choices[0].message.content;
+      } catch (err) {
+        console.warn('[ReActLoop] DeepSeek failed, trying local model:', err.message);
+      }
+    }
+
+    // Try Ollama (local)
+    if (this.integrations?.isOllamaAvailable()) {
+      try {
+        return await this.integrations.chat(messages, options);
+      } catch (err) {
+        console.warn('[ReActLoop] Ollama failed:', err.message);
+      }
+    }
+
+    throw new Error('No AI model available. Configure DEEPSEEK_API_KEY or install Ollama.');
   }
 
   /**
@@ -360,54 +410,49 @@ class ReActLoop extends EventEmitter {
 
   /**
    * THINK: Analyze the observation and generate thoughts
+   * Uses Accessibility Tree only (no full DOM) to save tokens.
    */
   async think(observation, context) {
     console.log('[ReActLoop] THINK: Reasoning about next steps...');
-    
-    if (!config.deepseekApiKey) {
+
+    const hasAI = config.deepseekApiKey || this.integrations?.isOllamaAvailable();
+    if (!hasAI) {
       return this.thinkLocally(observation, context);
     }
 
     try {
       const isArabic = /[\u0600-\u06FF]/.test(context.task.description);
-      const languageInstruction = isArabic 
-        ? "IMPORTANT: You must think and reason in Arabic. Keep all descriptions VERY CONCISE. However, the JSON KEYS must remain in English. Only the values should be in Arabic."
-        : "You must respond in English.";
+      const languageInstruction = isArabic
+        ? 'Respond in Arabic. JSON keys stay in English.'
+        : 'Respond in English.';
 
-      const systemPrompt = `You are an autonomous AI agent. Analyze the page and determine the next action.
+      const systemPrompt = `You are an autonomous web agent. Analyze the current page state and determine progress.
 ${languageInstruction}
-Return ONLY a valid JSON object with: currentState, progress, obstacles, taskComplete, nextSteps, confidence. Do not include markdown blocks.`;
+Return ONLY valid JSON: { currentState, progress, obstacles, taskComplete, nextSteps, confidence }
+Do NOT include markdown or extra text.`;
 
-      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { 
-            role: 'user', 
-            content: `Task: ${context.task.description}
-Current URL: ${context.pageUrl || 'unknown'}
-Current page title: ${context.pageTitle || 'unknown'}
-Page analysis: ${JSON.stringify(context.analysis || {})}
+      // Trim accessibility tree to 2000 chars to reduce tokens
+      const tree = (context.accessibilityTree || 'unavailable').substring(0, 2000);
+
+      // Only send last 2 actions and last 2 errors
+      const recentActions = (context.results || []).slice(-2).map(r => ({
+        action: r.action, success: r.success
+      }));
+      const recentErrors = (context.errors || []).slice(-2);
+
+      const userContent = `Task: ${context.task.description}
+URL: ${context.pageUrl || 'unknown'}
+Title: ${context.pageTitle || 'unknown'}
 Accessibility Tree:
-${context.accessibilityTree || 'No tree available'}
-Interactive elements count: ${context.interactiveElements?.length || 0}
-Recent actions: ${JSON.stringify(context.results.slice(-3))}
-Recent errors: ${JSON.stringify(context.errors.slice(-3))}
-Relevant memories: ${JSON.stringify(context.relevantMemories || {})}
+${tree}
+Interactive elements: ${context.interactiveElements?.length || 0}
+Recent actions: ${JSON.stringify(recentActions)}
+Recent errors: ${JSON.stringify(recentErrors)}`;
 
-Please analyze the current state.` 
-          }
-        ],
-        temperature: 0.5,
-        max_tokens: 800
-      }, {
-        headers: {
-          'Authorization': `Bearer ${config.deepseekApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 60000
-      });
-      const responseText = response.data.choices[0].message.content;
+      const responseText = await this.callAI([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ], { temperature: 0.5, max_tokens: 600, timeout: 60000 });
 
       const thinking = this.safeJsonParse(responseText);
       console.log('[ReActLoop] AI Thinking Result:', JSON.stringify(thinking, null, 2));
@@ -448,79 +493,63 @@ Please analyze the current state.`
 
   /**
    * PLAN: Create action plan based on thoughts
+   * Limits interactive elements to 25 max to save tokens.
    */
   async plan(thought, context) {
     console.log('[ReActLoop] PLAN: Creating action plan...');
-    
-    if (!config.deepseekApiKey) {
+
+    const hasAI = config.deepseekApiKey || this.integrations?.isOllamaAvailable();
+    if (!hasAI) {
       return this.planLocally(thought, context);
     }
 
     try {
       const isArabic = /[\u0600-\u06FF]/.test(context.task.description);
-      const languageInstruction = isArabic 
-        ? "IMPORTANT: You must reason in Arabic. The 'reasoning' value should be a VERY CONCISE description of the action (max 10 words). However, the JSON KEYS and action types must remain in English."
-        : "You must respond in English.";
+      const languageInstruction = isArabic
+        ? "Respond in Arabic. JSON keys and action types must stay in English."
+        : "Respond in English.";
 
-      const systemPrompt = `You are an action planner for web automation.
+      const systemPrompt = `You are a web automation action planner.
 ${languageInstruction}
-Based on the analysis and current obstacles, determine the next action to take.
+Choose the single best next action based on the current page state.
 
-CRITICAL: When filling forms, you MUST:
-1. Carefully analyze each field's requirements (label, placeholder, type).
-2. Map data to the CORRECT fields. Do not put names in email fields or vice versa.
-3. For dropdowns (select tags), look at the 'options' provided in the element metadata. Use 'select_option' with the correct 'value'.
-4. For multi-part dates (Day, Month, Year in separate fields), identify all three fields and fill them individually.
-5. Ensure all required fields are filled before submitting.
-6. If you are unsure about a field, use 'extract' to get more context or 'wait' for the page to stabilize.
+Form filling rules:
+- Map data to correct fields (name→name, email→email, password→password).
+- For dropdowns: use select_option with correct value.
+- Use realistic data: names like "Ahmed Mansour", emails like "ahmed.m2024@gmail.com", passwords like "P@ssw0rd2026!".
 
-CRITICAL: When generating data for 'type' actions (like names, emails, passwords, phone numbers), ALWAYS use SEMI-REALISTIC data. 
-- For names: Use common Arabic or English names (e.g., "Ahmed Mansour", "Sarah Smith").
-- For emails: Use realistic patterns (e.g., "ahmed.m2024@gmail.com", "sarah.dev.test@outlook.com").
-- For passwords: Use secure-looking strings (e.g., "P@ssw0rd2026!", "Secure#User99").
-- For dates: Use realistic birth dates (e.g., "1995-05-15").
+Available actions:
+click:{elementId,x,y} | type:{elementId,text} | scroll:{direction,amount} | wait:{duration}
+navigate:{url} | press_key:{key} | select_option:{elementId,value} | extract:{}
+fill_form:{data} | find_keyword:{keyword} | message:{type,content}
 
-Available actions (use these EXACT types):
-- click: { elementId, x, y }
-- type: { elementId, text }
-- scroll: { direction, amount }
-- wait: { duration }
-- extract: {}
-- navigate: { url }
-- move_mouse: { x, y }
-- press_key: { key }
-- select_option: { elementId, value }
-- upload_file: { elementId, filePath }
-- find_keyword: { keyword }
-- fill_form: { data } (where data is an object of elementId: value)
-- message: { type: 'info'|'ask'|'result', content: 'string', data: object }
+Return ONLY valid JSON: { nextAction:{type,params}, reasoning, confidence }`;
 
-IMPORTANT: Keep 'reasoning' extremely brief and direct.
-Return ONLY a valid JSON object with: nextAction (object with 'type' and 'params'), reasoning, confidence. Do not include markdown blocks.`;
+      // Limit interactive elements to 25 with minimal fields
+      const elements = (context.interactiveElements || [])
+        .slice(0, 25)
+        .map(e => ({
+          id: e.id,
+          tag: e.tag,
+          type: e.type,
+          label: e.label,
+          placeholder: e.placeholder,
+          text: e.text?.substring(0, 60),
+          options: e.options?.slice(0, 10)
+        }));
 
-      const planResponse = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { 
-            role: 'user', 
-            content: `Task: ${context.task.description}
-Current Thoughts: ${JSON.stringify(thought)}
-Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ id: e.id, tag: e.tag, text: e.text, label: e.label, role: e.role, type: e.type, placeholder: e.placeholder, options: e.options })) || [])}
+      const userContent = `Task: ${context.task.description}
+Analysis: ${thought.currentState || ''} | Next: ${JSON.stringify(thought.nextSteps || [])}
+Obstacles: ${JSON.stringify(thought.obstacles || [])}
+Interactive Elements (${elements.length}):
+${JSON.stringify(elements)}
 
-Plan the next action.` 
-          }
-        ],
-        temperature: 0.4,
-        max_tokens: 500
-      }, {
-        headers: {
-          'Authorization': `Bearer ${config.deepseekApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 60000
-      });
-      const responseText = planResponse.data.choices[0].message.content;
+Choose next action.`;
+
+      const responseText = await this.callAI([
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ], { temperature: 0.4, max_tokens: 400, timeout: 60000 });
 
       const planning = this.safeJsonParse(responseText);
       console.log('[ReActLoop] AI Planning Result:', JSON.stringify(planning, null, 2));
