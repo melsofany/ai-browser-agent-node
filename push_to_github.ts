@@ -31,7 +31,7 @@ async function pushToGithub() {
     execSync('git add .');
 
     console.log('💾 عمل Commit...');
-    const commitMsg = "Fix: Improve form data quality, fix truncated error logs, and enhance AI failure recovery";
+    const commitMsg = "Fix: Improve form field identification and AI mapping logic to prevent misfilling";
     try {
       execSync(`git commit -m "${commitMsg}"`);
     } catch (e) {

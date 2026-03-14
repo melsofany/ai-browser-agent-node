@@ -298,11 +298,15 @@ class BrowserAgent {
               const agentId = idCounter++;
               el.setAttribute('data-agent-id', agentId.toString());
               
+              const label = el.id ? document.querySelector(`label[for="${el.id}"]`) : el.closest('label');
+              const labelText = label ? label.innerText.trim() : '';
+              
               results.push({
                 id: agentId,
                 tag: el.tagName.toLowerCase(),
                 type: el.type || '',
                 text: (el.innerText || el.value || el.placeholder || el.getAttribute('aria-label') || el.title || '').trim().substring(0, 100),
+                label: labelText,
                 role: el.getAttribute('role') || '',
                 name: el.name || '',
                 id_attr: el.id || '',
