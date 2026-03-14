@@ -75,11 +75,25 @@ class ThinkingAgent {
           }
         }
 
-        // Try to find the first '{' and last '}'
+        // Try to find the first '{' and last '}' or '[' and last ']'
         const firstBrace = cleanedText.indexOf('{');
         const lastBrace = cleanedText.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          const potentialJson = cleanedText.substring(firstBrace, lastBrace + 1);
+        const firstBracket = cleanedText.indexOf('[');
+        const lastBracket = cleanedText.lastIndexOf(']');
+        
+        let start = -1;
+        let end = -1;
+        
+        if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+          start = firstBrace;
+          end = lastBrace;
+        } else if (firstBracket !== -1) {
+          start = firstBracket;
+          end = lastBracket;
+        }
+        
+        if (start !== -1 && end !== -1 && end > start) {
+          const potentialJson = cleanedText.substring(start, end + 1);
           try {
             return JSON.parse(potentialJson);
           } catch (e3) {
@@ -262,12 +276,12 @@ Return as structured JSON.`;
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Task: ${taskDescription}\nContext: ${JSON.stringify(sanitizedContext)}` }
           ],
-          response_format: { type: 'json_object' }
         }, {
           headers: {
             'Authorization': `Bearer ${this.deepseekApiKey}`,
             'Content-Type': 'application/json'
-          }
+          },
+          timeout: 60000
         });
         responseText = response.data.choices[0].message.content;
       } else {

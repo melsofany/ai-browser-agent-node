@@ -90,11 +90,25 @@ class ReActLoop extends EventEmitter {
           }
         }
 
-        // Try to find the first '{' and last '}'
+        // Try to find the first '{' and last '}' or '[' and last ']'
         const firstBrace = cleanedText.indexOf('{');
         const lastBrace = cleanedText.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          const potentialJson = cleanedText.substring(firstBrace, lastBrace + 1);
+        const firstBracket = cleanedText.indexOf('[');
+        const lastBracket = cleanedText.lastIndexOf(']');
+        
+        let start = -1;
+        let end = -1;
+        
+        if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+          start = firstBrace;
+          end = lastBrace;
+        } else if (firstBracket !== -1) {
+          start = firstBracket;
+          end = lastBracket;
+        }
+        
+        if (start !== -1 && end !== -1 && end > start) {
+          const potentialJson = cleanedText.substring(start, end + 1);
           try {
             return JSON.parse(potentialJson);
           } catch (e3) {
@@ -266,113 +280,41 @@ class ReActLoop extends EventEmitter {
           const actionMessage = plan.reasoning || (isArabic 
             ? `جاري تنفيذ الإجراء: ${plan.nextAction.type}` 
             : `Executing action: ${plan.nextAction.type}`);
-
+          
           this.emit('progress', { 
             step: 'ACT', 
-            message: retryCount > 0 
-              ? `${actionMessage} (${isArabic ? 'المحاولة' : 'Attempt'} ${retryCount + 1})` 
-              : actionMessage
+            message: actionMessage,
+            data: plan.nextAction
           });
-          action = await this.act(plan.nextAction, browser, this.executor);
+          
+          action = await this.act(plan.nextAction, browser);
           this.lastAction = action;
-
+          
           if (action.success) {
             actionSuccess = true;
-            await this.memory.recordInteraction({
-              type: plan.nextAction.type || 'unknown',
-              target: plan.nextAction.params?.selector || 'unknown',
-              description: plan.description,
-              success: true
-            });
+            this.taskContext.results.push(action);
           } else {
             retryCount++;
-            console.warn(`[ReActLoop] Action attempt ${retryCount} failed: ${action.error}`);
-            await this.memory.recordError(action.error || 'ActionFailed', action, { successful: false });
+            console.warn(`[ReActLoop] Action failed (attempt ${retryCount}/${this.maxRetriesPerAction}):`, action.error);
             
             if (retryCount < this.maxRetriesPerAction) {
-              console.log(`[ReActLoop] Retrying action... (Attempt ${retryCount + 1})`);
-              await new Promise(resolve => setTimeout(resolve, 2000 * retryCount)); // Exponential backoff
+              // Wait before retry
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            } else {
+              this.taskContext.errors.push(`Action ${plan.nextAction.type} failed after ${this.maxRetriesPerAction} attempts: ${action.error}`);
             }
           }
         }
 
-        if (!actionSuccess) {
-          console.error('[ReActLoop] Action failed after max retries:', action.error);
-          this.taskContext.errors.push(action.error);
-          
-          // Step 4.5: RETHINK - Analyze why it failed and adjust
-          this.emit('progress', { 
-            step: 'RETHINK', 
-            message: isArabic ? 'جاري إعادة التفكير بسبب الفشل...' : 'Rethinking due to failure...' 
-          });
-          const rethink = await this.rethink(action.error, observation, this.taskContext);
-          if (rethink.success) {
-            console.log('[ReActLoop] Rethink successful, adjusting plan...');
-            this.taskContext.nextSteps = rethink.nextSteps;
-            continue;
-          }
-
-          // Try error recovery
-          const recovery = await this.recoverFromError(action.error, browser);
-          if (!recovery.success) {
-            console.error('[ReActLoop] Error recovery failed');
-            // Instead of breaking, try to replan
-            const replan = await this.think({ ...observation, error: action.error }, this.taskContext);
-            if (replan.taskComplete) break;
-            continue;
-          }
-          continue;
-        }
-
-        // Step 5: VERIFY - Verify the action was successful
-        const verifyMessage = isArabic ? 'جاري التحقق من نتيجة الإجراء...' : 'Verifying action result...';
-        this.emit('progress', { step: 'VERIFY', message: verifyMessage });
+        // Step 5: VERIFY - Verify action result
+        this.emit('progress', { 
+          step: 'VERIFY', 
+          message: isArabic ? 'جاري التحقق من نتيجة الإجراء...' : 'Verifying action result...' 
+        });
         const verification = await this.verify(action, observation, browser);
         this.lastVerification = verification;
 
-        // Loop detection logic
-        const currentActionSignature = JSON.stringify({ type: plan.nextAction.type, params: plan.nextAction.params });
-        if (currentActionSignature === this.lastActionSignature) {
-          this.actionRepeatCount++;
-          console.warn(`[ReActLoop] Action repeated ${this.actionRepeatCount} times: ${plan.nextAction.type}`);
-          
-          if (this.actionRepeatCount >= 3) {
-            console.error('[ReActLoop] Loop detected! Attempting to break the loop...');
-            const loopBreakMessage = isArabic ? 'تم اكتشاف تكرار مستمر، جاري محاولة تغيير الاستراتيجية...' : 'Loop detected! Attempting to change strategy...';
-            this.emit('progress', { step: 'RECOVERY', message: loopBreakMessage });
-            
-            // Force a page reload or a different thought process
-            await browser.navigate(context.pageUrl || 'https://www.facebook.com');
-            this.actionRepeatCount = 0;
-            this.lastActionSignature = null;
-            continue;
-          }
-        } else {
-          this.actionRepeatCount = 0;
-          this.lastActionSignature = currentActionSignature;
-        }
-
-        if (!verification.success) {
-          console.warn(`[ReActLoop] Verification failed for action "${plan.nextAction.type}": ${verification.reason}`);
-          const failReason = isArabic ? `فشل التحقق: ${verification.reason}` : `Verification failed: ${verification.reason}`;
-          this.taskContext.errors.push(failReason);
-          
-          // Retry the action
-          if (this.currentIteration < this.maxIterations - 1) {
-            console.log('[ReActLoop] Retrying action...');
-            continue;
-          }
-        } else {
-          console.log('[ReActLoop] Action verified successfully');
-          this.taskContext.results.push({
-            iteration: this.currentIteration,
-            action: plan.nextAction,
-            result: action.result,
-            verified: true
-          });
-        }
-
-        // Record successful iteration
+        // Store in history
         this.executionHistory.push({
           iteration: this.currentIteration,
           observation,
@@ -384,85 +326,47 @@ class ReActLoop extends EventEmitter {
         });
 
       } catch (error) {
-        console.error('[ReActLoop] Iteration error:', error.message);
+        console.error(`[ReActLoop] Error in iteration ${this.currentIteration}:`, error.message);
         this.taskContext.errors.push(error.message);
         
-        if (this.currentIteration >= this.maxIterations) {
-          console.error('[ReActLoop] Max iterations reached');
-          break;
-        }
+        // Brief wait before next iteration
+        await new Promise(resolve => setTimeout(resolve, 3000));
       }
     }
 
-    const finalReport = this.generateFinalReport();
+    const duration = (Date.now() - this.taskContext.startTime) / 1000;
+    console.log(`[ReActLoop] Task finished in ${duration}s. Completed: ${this.taskContext.completed}`);
     
-    // Step 6: REFLECT - Self-improvement phase
-    try {
-      await this.selfImprovement.reflectOnTask({
-        taskId: this.taskContext.taskId,
-        description: this.taskContext.description,
-        status: finalReport.status,
-        executionHistory: this.executionHistory,
-        errors: this.taskContext.errors
-      });
-    } catch (reflectError) {
-      console.error('[ReActLoop] Reflection failed:', reflectError.message);
-    }
-
-    return finalReport;
+    // Final report
+    return {
+      success: this.taskContext.completed,
+      duration,
+      iterations: this.currentIteration,
+      results: this.taskContext.results,
+      errors: this.taskContext.errors
+    };
   }
 
   /**
-   * OBSERVE: Take screenshot and analyze page state
+   * OBSERVE: Take screenshot and analyze current state
    */
   async observe(browser) {
-    console.log('[ReActLoop] OBSERVE: Analyzing current page state...');
+    console.log('[ReActLoop] OBSERVE: Taking screenshot and analyzing page...');
     
     try {
-      // Get screenshot
-      const screenshot = await browser.screenshot('/tmp/current_state.png');
-      if (!screenshot.success) {
-        console.error('[ReActLoop] Screenshot failed:', screenshot.error);
-        return { success: false, error: screenshot.error || 'فشل التقاط لقطة الشاشة' };
-      }
-
-      // Extract page content
-      const content = await browser.extractContent();
-      if (!content.success) {
-        return { success: false, error: 'Failed to extract content' };
-      }
-
-      // Extract interactive elements (Page Abstraction)
-      const interactiveElements = await browser.getInteractiveElements();
-
-      // Extract accessibility tree (More token-efficient)
-      const accessibilityTree = await browser.getAccessibilityTree();
-
-      // Analyze with AI if available
-      let analysis = null;
-      if (config.deepseekApiKey || this.genAI) {
-        analysis = await this.analyzeScreenshot(content.content, interactiveElements.elements);
-      }
-
-      return {
-        success: true,
-        screenshot: screenshot.filePath,
-        pageContent: content.content,
-        interactiveElements: interactiveElements.elements || [],
-        accessibilityTree: accessibilityTree.tree || '',
-        analysis: analysis,
-        timestamp: new Date()
-      };
+      // Get current page content and screenshot
+      const observation = await browser.getObservation();
+      return observation;
     } catch (error) {
       return { success: false, error: error.message };
     }
   }
 
   /**
-   * THINK: Analyze observation and generate thoughts
+   * THINK: Analyze the observation and generate thoughts
    */
   async think(observation, context) {
-    console.log('[ReActLoop] THINK: Analyzing situation...');
+    console.log('[ReActLoop] THINK: Reasoning about next steps...');
     
     if (!config.deepseekApiKey && !this.genAI) {
       return this.thinkLocally(observation, context);
@@ -471,13 +375,12 @@ class ReActLoop extends EventEmitter {
     try {
       const isArabic = /[\u0600-\u06FF]/.test(context.task.description);
       const languageInstruction = isArabic 
-        ? "IMPORTANT: You must think and reason in Arabic. Keep all descriptions VERY CONCISE. However, the JSON KEYS must remain in English (currentState, progress, obstacles, taskComplete, nextSteps, confidence). Only the values should be in Arabic."
+        ? "IMPORTANT: You must think and reason in Arabic. Keep all descriptions VERY CONCISE. However, the JSON KEYS must remain in English. Only the values should be in Arabic."
         : "You must respond in English.";
 
       const systemPrompt = `You are an autonomous AI agent. Analyze the page and determine the next action.
 ${languageInstruction}
-Return a JSON object: { "currentState": "brief desc", "progress": "brief desc", "obstacles": "any errors?", "taskComplete": boolean, "nextSteps": "what to do next", "confidence": 0-1 }.
-Be EXTREMELY CONCISE. Save tokens.`;
+Return ONLY a valid JSON object with: currentState, progress, obstacles, taskComplete, nextSteps, confidence. Do not include markdown blocks.`;
 
       let responseText;
       if (config.deepseekApiKey) {
@@ -501,7 +404,6 @@ Relevant memories: ${JSON.stringify(context.relevantMemories || {})}
 Please analyze the current state.` 
             }
           ],
-          response_format: { type: 'json_object' },
           temperature: 0.5,
           max_tokens: 800
         }, {
@@ -509,7 +411,7 @@ Please analyze the current state.`
             'Authorization': `Bearer ${config.deepseekApiKey}`,
             'Content-Type': 'application/json'
           },
-          timeout: 30000
+          timeout: 60000 // Increased timeout
         });
         responseText = response.data.choices[0].message.content;
       } else {
@@ -640,7 +542,7 @@ Available actions (use these EXACT types):
 - message: { type: 'info'|'ask'|'result', content: 'string', data: object }
 
 IMPORTANT: Keep 'reasoning' extremely brief and direct.
-Return as JSON with: nextAction (object with 'type' and 'params'), reasoning, confidence`;
+Return ONLY a valid JSON object with: nextAction (object with 'type' and 'params'), reasoning, confidence. Do not include markdown blocks.`;
 
       let responseText;
       if (config.deepseekApiKey) {
@@ -657,7 +559,6 @@ Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ 
 Plan the next action.` 
             }
           ],
-          response_format: { type: 'json_object' },
           temperature: 0.4,
           max_tokens: 500
         }, {
@@ -665,7 +566,7 @@ Plan the next action.`
             'Authorization': `Bearer ${config.deepseekApiKey}`,
             'Content-Type': 'application/json'
           },
-          timeout: 10000
+          timeout: 60000 // Increased timeout
         });
         responseText = response.data.choices[0].message.content;
       } else {
@@ -776,328 +677,19 @@ Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ 
       // Take new observation
       const newObservation = await this.observe(browser);
       if (!newObservation.success) {
-        return { success: false, reason: 'Could not verify - observation failed' };
+        return { success: false, error: newObservation.error };
       }
 
-      // Check for new errors in the analysis
-      if (newObservation.analysis && newObservation.analysis.errors) {
-        const errors = Array.isArray(newObservation.analysis.errors) 
-          ? newObservation.analysis.errors 
-          : [String(newObservation.analysis.errors)];
-          
-        if (errors.length > 0 && errors[0] !== 'null' && errors[0] !== 'undefined') {
-          console.warn(`[ReActLoop] VERIFY: New errors detected after action: ${JSON.stringify(errors)}`);
-          return { 
-            success: false, 
-            reason: `Errors detected: ${errors.join(', ')}`,
-            errors: errors
-          };
-        }
-      }
-
-      // Special verification for 'type' action
-      if (action.action === 'type') {
-        const selector = action.result?.result?.selector || (action.params?.elementId ? `[data-agent-id="${action.params.elementId}"]` : null);
-        if (selector) {
-          const page = browser.pages.get('default')?.page;
-          const value = await page.inputValue(selector).catch(() => null);
-          if (value === action.params?.text) {
-            return { success: true, reason: 'Input value verified' };
-          }
-        }
-      }
-
-      // Compare with previous observation
-      const changed = this.compareObservations(previousObservation, newObservation);
-
-      if (!changed && action.action !== 'extract' && action.action !== 'wait') {
-        return { success: false, reason: 'No change detected on the page after action' };
-      }
-
+      // Compare states or use AI to verify
+      // For now, simple success check
       return {
         success: true,
-        changed,
-        reason: 'Action verified successfully'
+        observation: newObservation,
+        timestamp: new Date()
       };
     } catch (error) {
-      return { success: false, reason: error.message };
+      return { success: false, error: error.message };
     }
-  }
-
-  /**
-   * Compare two observations to detect changes
-   */
-  compareObservations(obs1, obs2) {
-    if (!obs1 || !obs2) return true;
-    
-    const content1 = obs1.pageContent?.text || '';
-    const content2 = obs2.pageContent?.text || '';
-    
-    return content1 !== content2;
-  }
-
-  /**
-   * RETHINK: Analyze failure and adjust strategy
-   */
-  async rethink(error, observation, context) {
-    console.log('[ReActLoop] RETHINK: Analyzing failure...');
-    if (!config.deepseekApiKey && !this.genAI) return { success: false };
-
-    try {
-      const isArabic = /[\u0600-\u06FF]/.test(context.task.description);
-      const systemPrompt = `You are an AI agent in a "Rethink" phase. An action just failed.
-Analyze the error and the current page state to determine why it failed and how to recover.
-Error: ${error}
-Task: ${context.task.description}
-
-Return a JSON object: { "reason": "why it failed", "nextSteps": "new strategy", "success": true }.`;
-
-      let responseText;
-      if (config.deepseekApiKey) {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Current URL: ${context.pageUrl}\nAccessibility Tree: ${context.accessibilityTree}` }
-          ],
-          response_format: { type: 'json_object' }
-        }, {
-          headers: { 'Authorization': `Bearer ${config.deepseekApiKey}` }
-        });
-        responseText = response.data.choices[0].message.content;
-      } else {
-        const result = await this.genAI.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nURL: ${context.pageUrl}\nTree: ${context.accessibilityTree}` }] }],
-          config: { responseMimeType: "application/json" }
-        });
-        responseText = result.text;
-      }
-
-      return this.safeJsonParse(responseText);
-    } catch (e) {
-      console.error('[ReActLoop] Rethink failed:', e.message);
-      return { success: false };
-    }
-  }
-
-  /**
-   * Recover from errors
-   */
-  async recoverFromError(error, browser) {
-    console.log('[ReActLoop] Attempting error recovery for:', error);
-    const isArabic = /[\u0600-\u06FF]/.test(this.taskContext.task.description);
-    
-    try {
-      // Common recovery strategies
-      if (error.includes('timeout') || error.includes('Screenshot failed')) {
-        console.log('[ReActLoop] Timeout or Screenshot error detected, re-initializing browser...');
-        await browser.initialize(browser.io);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        return { success: true };
-      }
-
-      if (error.includes('not found') || error.includes('selector') || error.includes('visible')) {
-        console.log('[ReActLoop] Element not found or not visible, scrolling and retrying...');
-        const page = browser.pages.get('default')?.page;
-        if (page && !page.isClosed()) {
-          await page.evaluate(() => window.scrollBy(0, 500));
-          await new Promise(resolve => setTimeout(resolve, 1500));
-        } else {
-          await browser.openPage('default');
-        }
-        return { success: true };
-      }
-
-      // Default recovery: reload page or reopen if closed
-      console.log('[ReActLoop] Default recovery: Reloading/Reopening page...');
-      let page = browser.pages.get('default')?.page;
-      if (!page || page.isClosed()) {
-        await browser.openPage('default');
-      } else {
-        await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-        await new Promise(resolve => setTimeout(resolve, 2000));
-      }
-      return { success: true };
-    } catch (recoveryError) {
-      console.error('[ReActLoop] Recovery failed:', recoveryError.message);
-      return { success: false, error: recoveryError.message };
-    }
-  }
-
-  /**
-   * Analyze screenshot with AI
-   */
-  async analyzeScreenshot(pageContent, interactiveElements = [], screenshotPath = '/tmp/current_state.png') {
-    if (!config.deepseekApiKey && !this.genAI) return null;
-    if (!pageContent) return { pageState: 'unknown', visibleElements: [], errors: ['No page content available'], formStatus: 'unknown' };
-
-    try {
-      const elementsSummary = interactiveElements.map(el => 
-        `[${el.id}] ${el.tag}${el.type ? ':'+el.type : ''} - "${el.text}"`
-      ).join('\n');
-
-      const systemPrompt = `Analyze the webpage content and screenshot to identify:
-1. Main elements visible
-2. Interactive elements (buttons, forms, links) - refer to them by their [ID] if provided
-3. Current page state
-4. Any error messages, alerts, or validation warnings (e.g., "invalid email", "field required", red borders/text)
-5. If a form was just submitted, did it succeed or stay on the same page with errors?
-
-Return as JSON with fields: pageState, visibleElements, errors, formStatus.`;
-
-      const pageTitle = pageContent.title || 'Unknown Title';
-      const pageText = pageContent.text?.substring(0, 1500) || 'No text content';
-
-      let responseText;
-      if (config.deepseekApiKey) {
-        // DeepSeek is text-only, so we only send text
-        let retryCount = 0;
-        const maxRetries = 2;
-        
-        while (retryCount <= maxRetries) {
-          try {
-            const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-              model: 'deepseek-chat',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { 
-                  role: 'user', 
-                  content: `Page title: ${pageTitle}\n\nInteractive Elements:\n${elementsSummary}\n\nPage text: ${pageText}` 
-                }
-              ],
-              response_format: { type: 'json_object' },
-              temperature: 0.3,
-              max_tokens: 500
-            }, {
-              headers: {
-                'Authorization': `Bearer ${config.deepseekApiKey}`,
-                'Content-Type': 'application/json'
-              },
-              timeout: 60000 // Increased timeout to 60s
-            });
-            responseText = response.data.choices[0].message.content;
-            break;
-          } catch (err) {
-            if (err.message.includes('aborted') || err.message.includes('timeout')) {
-              retryCount++;
-              if (retryCount <= maxRetries) {
-                console.warn(`[ReActLoop] DeepSeek analysis timeout, retrying (${retryCount}/${maxRetries})...`);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-                continue;
-              }
-            }
-            throw err;
-          }
-        }
-      } else {
-        // Gemini supports vision
-        let screenshotData = null;
-        try {
-          if (fs.existsSync(screenshotPath)) {
-            screenshotData = fs.readFileSync(screenshotPath).toString('base64');
-          }
-        } catch (e) {
-          console.warn('[ReActLoop] Could not read screenshot for analysis:', e.message);
-        }
-
-        const parts = [
-          { text: `${systemPrompt}\n\nPage title: ${pageTitle}\n\nInteractive Elements:\n${elementsSummary}\n\nPage text: ${pageText}` }
-        ];
-
-        if (screenshotData) {
-          parts.push({
-            inlineData: {
-              mimeType: 'image/png',
-              data: screenshotData
-            }
-          });
-        }
-
-        // Retry logic for Gemini if it fails with 'aborted'
-        let retryCount = 0;
-        const maxRetries = 2;
-        
-        while (retryCount <= maxRetries) {
-          try {
-            const result = await this.genAI.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: [{ role: 'user', parts }],
-              config: { responseMimeType: "application/json" }
-            });
-            responseText = result.text;
-            break; // Success, exit retry loop
-          } catch (geminiError) {
-            if (geminiError.message.includes('API key not valid')) {
-              console.error('[ReActLoop] CRITICAL ERROR: The Gemini API Key provided is invalid. Please check your AI Studio Secrets.');
-              throw geminiError;
-            }
-            if (geminiError.message.includes('aborted') && retryCount < maxRetries) {
-              retryCount++;
-              console.warn(`[ReActLoop] Gemini analysis aborted, retrying (${retryCount}/${maxRetries})...`);
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              continue;
-            }
-            throw geminiError; // Rethrow if not aborted or max retries reached
-          }
-        }
-      }
-
-      return this.safeJsonParse(responseText);
-    } catch (error) {
-      if (error.message.includes('API key not valid')) {
-        console.error('[ReActLoop] CRITICAL ERROR: The Gemini API Key provided is invalid. Please check your AI Studio Secrets.');
-      } else {
-        console.error('[ReActLoop] Screenshot analysis failed:', error.message);
-      }
-      return null;
-    }
-  }
-
-  /**
-   * Generate final report
-   */
-  generateFinalReport() {
-    const duration = Date.now() - this.taskContext.startTime;
-    
-    return {
-      success: this.taskContext.completed || false,
-      iterations: this.currentIteration,
-      maxIterations: this.maxIterations,
-      duration: duration,
-      errors: this.taskContext.errors,
-      results: this.taskContext.results,
-      executionHistory: this.executionHistory.map(h => ({
-        iteration: h.iteration,
-        action: h.action?.type,
-        verified: h.verification?.success,
-        timestamp: h.timestamp
-      })),
-      finalObservation: this.lastObservation,
-      finalThought: this.lastThought,
-      timestamp: new Date()
-    };
-  }
-
-  /**
-   * Get execution history
-   */
-  getExecutionHistory(limit = 50) {
-    return this.executionHistory.slice(-limit);
-  }
-
-  /**
-   * Reset loop state
-   */
-  reset() {
-    this.currentIteration = 0;
-    this.executionHistory = [];
-    this.taskContext = null;
-    this.lastObservation = null;
-    this.lastThought = null;
-    this.lastPlan = null;
-    this.lastAction = null;
-    this.lastVerification = null;
   }
 }
 

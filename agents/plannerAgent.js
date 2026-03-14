@@ -159,7 +159,7 @@ CRITICAL: When dealing with forms:
 2. For dates of birth, check if they are split into Day, Month, and Year fields. If so, create separate steps for each.
 3. Use realistic data for all fields.
 
-Return a JSON object:
+Return ONLY a valid JSON object (no markdown blocks, no preamble):
 {
   "goal": "the original goal",
   "analysis": "brief analysis of the task",
@@ -179,9 +179,12 @@ Return a JSON object:
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Goal: ${goal}\nContext: ${JSON.stringify(context)}` }
           ],
-          response_format: { type: 'json_object' }
         }, {
-          headers: { 'Authorization': `Bearer ${this.deepseekApiKey}` }
+          headers: { 
+            'Authorization': `Bearer ${this.deepseekApiKey}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 60000
         });
         responseText = response.data.choices[0].message.content;
       } else {
@@ -324,7 +327,7 @@ Return a JSON object:
 1. The task type: 'browser' for web automation, 'system' for system commands, 'development' for git/file operations, or 'auto' for auto-detection
 2. The priority: 'high' for urgent/important, 'normal' for regular, 'low' for background tasks
 
-Return a JSON object with "type" and "priority" fields.
+Return ONLY a valid JSON object with "type" and "priority" fields.
 Example: { "type": "browser", "priority": "high" }`;
 
     try {
@@ -334,13 +337,12 @@ Example: { "type": "browser", "priority": "high" }`;
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Task: ${description}` }
         ],
-        response_format: { type: 'json_object' }
       }, {
         headers: {
           'Authorization': `Bearer ${this.deepseekApiKey}`,
           'Content-Type': 'application/json'
         },
-        timeout: 20000 // Increased timeout
+        timeout: 60000 // Increased timeout to 60s
       });
 
       const content = response.data.choices[0].message.content;
@@ -366,7 +368,7 @@ Example: { "type": "browser", "priority": "high" }`;
 1. The task type: 'browser' for web automation, 'system' for system commands, 'development' for git/file operations, or 'auto' for auto-detection
 2. The priority: 'high' for urgent/important, 'normal' for regular, 'low' for background tasks
 
-Return a JSON object with "type" and "priority" fields.
+Return ONLY a valid JSON object with "type" and "priority" fields.
 Example: { "type": "browser", "priority": "high" }`;
 
     try {
@@ -430,7 +432,7 @@ Available Actions:
 The plan must be a JSON array of steps. Each step must contain: "order" (number), "action" (string), "params" (object), and "description" (string).
 Each step should have "reasoning" explaining why this step is being taken.
 
-Return ONLY the JSON array.`;
+CRITICAL: Return ONLY the raw JSON array. Do not include markdown code blocks or any other text.`;
 
     let retryCount = 0;
     const maxRetries = 2;
@@ -443,13 +445,12 @@ Return ONLY the JSON array.`;
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Task: ${description}\nType: ${type || 'auto'}` }
           ],
-          response_format: { type: 'json_object' }
         }, {
           headers: {
             'Authorization': `Bearer ${this.deepseekApiKey}`,
             'Content-Type': 'application/json'
           },
-          timeout: 120000 // Increased timeout to 2 minutes
+          timeout: 120000 // Keep timeout at 2 minutes
         });
 
         const content = response.data.choices[0].message.content;
@@ -759,7 +760,6 @@ Return a JSON object with a "subtasks" array.`;
             { role: 'system', content: systemPrompt },
             { role: 'user', content: `Task: ${taskDescription}` }
           ],
-          response_format: { type: 'json_object' }
         }, {
           headers: {
             'Authorization': `Bearer ${this.deepseekApiKey}`,
