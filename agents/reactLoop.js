@@ -322,17 +322,16 @@ class ReActLoop extends EventEmitter {
         let retryCount = 0;
         let actionSuccess = false;
 
+        // Emit ACT message only once (first attempt)
+        this.emit('progress', {
+          step: 'ACT',
+          message: plan.reasoning || (isArabic
+            ? `جاري تنفيذ الإجراء: ${plan.nextAction.type}`
+            : `Executing action: ${plan.nextAction.type}`),
+          data: plan.nextAction
+        });
+
         while (retryCount < this.maxRetriesPerAction && !actionSuccess) {
-          const actionMessage = plan.reasoning || (isArabic 
-            ? `جاري تنفيذ الإجراء: ${plan.nextAction.type}` 
-            : `Executing action: ${plan.nextAction.type}`);
-          
-          this.emit('progress', { 
-            step: 'ACT', 
-            message: actionMessage,
-            data: plan.nextAction
-          });
-          
           action = await this.act(plan.nextAction, browser);
           this.lastAction = action;
           
@@ -344,7 +343,13 @@ class ReActLoop extends EventEmitter {
             console.warn(`[ReActLoop] Action failed (attempt ${retryCount}/${this.maxRetriesPerAction}):`, action.error);
             
             if (retryCount < this.maxRetriesPerAction) {
-              // Wait before retry
+              this.emit('progress', {
+                step: 'ACT',
+                message: isArabic
+                  ? `إعادة المحاولة ${retryCount}/${this.maxRetriesPerAction}: ${action.error}`
+                  : `Retry ${retryCount}/${this.maxRetriesPerAction}: ${action.error}`,
+                data: plan.nextAction
+              });
               await new Promise(resolve => setTimeout(resolve, 2000));
             } else {
               this.taskContext.errors.push(`Action ${plan.nextAction.type} failed after ${this.maxRetriesPerAction} attempts: ${action.error}`);

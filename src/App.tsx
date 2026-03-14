@@ -45,7 +45,7 @@ const App: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [browserImage, setBrowserImage] = useState<string | null>(null);
+  const [browserHasFrame, setBrowserHasFrame] = useState(false);
   const [currentTaskStatus, setCurrentTaskStatus] = useState<string | null>(null);
   const [showBrowser, setShowBrowser] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -150,6 +150,8 @@ const App: React.FC = () => {
 
     socket.on('taskStart', (data: any) => {
       addSystemMessage(`Task started: ${data.description}`, 'info');
+      setShowBrowser(true);
+      setIsMinimized(false);
     });
 
     socket.on('taskSuccess', (data: any) => {
@@ -180,7 +182,11 @@ const App: React.FC = () => {
 
     socket.on('browserStream', (data: { image: string }) => {
       if (data.image) {
-        setBrowserImage(`data:image/jpeg;base64,${data.image}`);
+        // Direct DOM update - bypasses React re-render for every frame
+        if (browserImgRef.current) {
+          browserImgRef.current.src = `data:image/jpeg;base64,${data.image}`;
+        }
+        setBrowserHasFrame(prev => prev ? prev : true);
       }
     });
 
@@ -640,31 +646,29 @@ const App: React.FC = () => {
                       onKeyUp={handleBrowserInteraction}
                       onWheel={handleBrowserInteraction}
                     >
-                    {browserImage ? (
-                      <img 
-                        ref={browserImgRef}
-                        src={browserImage} 
-                        alt="Browser View" 
-                        className="w-full h-full object-contain cursor-crosshair"
-                        referrerPolicy="no-referrer"
-                        onClick={handleBrowserInteraction}
-                        onDoubleClick={handleBrowserInteraction}
-                        onMouseDown={handleBrowserInteraction}
-                        onMouseUp={handleBrowserInteraction}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          handleBrowserInteraction(e);
-                        }}
-                        onMouseMove={(e) => {
-                          // Throttled mouse move could be added here if needed
-                        }}
-                      />
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-600 gap-4">
+                    {/* Spinner shown until first frame arrives */}
+                  {!browserHasFrame && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-600 gap-4 z-10">
                       <div className="w-12 h-12 rounded-full border-2 border-slate-800 border-t-indigo-500 animate-spin" />
                       <p className="text-sm font-medium">Initializing browser stream...</p>
                     </div>
                   )}
+                  {/* img always in DOM so direct .src updates work instantly */}
+                  <img
+                    ref={browserImgRef}
+                    alt="Browser View"
+                    className="w-full h-full object-contain cursor-crosshair"
+                    style={{ display: browserHasFrame ? 'block' : 'none' }}
+                    referrerPolicy="no-referrer"
+                    onClick={handleBrowserInteraction}
+                    onDoubleClick={handleBrowserInteraction}
+                    onMouseDown={handleBrowserInteraction}
+                    onMouseUp={handleBrowserInteraction}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      handleBrowserInteraction(e);
+                    }}
+                  />
                   
                   <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-4 py-2 bg-black/60 backdrop-blur-md border border-white/10 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-4">
                     <div className="flex items-center gap-2 text-[10px] text-slate-400 uppercase tracking-widest font-bold">

@@ -134,22 +134,35 @@ class BrowserAgent {
     if (pageData.streamingInterval) return;
 
     console.log(`[BrowserAgent] Starting stream for page: ${pageId}`);
-    
-    pageData.streamingInterval = setInterval(async () => {
+
+    // Use recursive setTimeout to avoid overlapping screenshots
+    const captureFrame = async () => {
+      const data = this.pages.get(pageId);
+      if (!data || !data.streaming) return;
+
       try {
-        if (page.isClosed()) {
-          this.stopStreaming(pageId);
-          return;
+        if (!page.isClosed()) {
+          const screenshot = await page.screenshot({ type: 'jpeg', quality: 60 });
+          if (this.io) {
+            this.io.emit('browserStream', {
+              pageId,
+              image: screenshot.toString('base64')
+            });
+          }
         }
-        const screenshot = await page.screenshot({ type: 'jpeg', quality: 50 });
-        this.io.emit('browserStream', {
-          pageId,
-          image: screenshot.toString('base64')
-        });
       } catch (err) {
         // Ignore errors during streaming
       }
-    }, 200); // 5 frames per second for better live feel
+
+      const d2 = this.pages.get(pageId);
+      if (d2 && d2.streaming) {
+        d2.streamingTimeout = setTimeout(captureFrame, 150);
+      }
+    };
+
+    pageData.streaming = true;
+    pageData.streamingInterval = true; // keep compatibility flag
+    pageData.streamingTimeout = setTimeout(captureFrame, 150);
   }
 
   /**
@@ -157,9 +170,13 @@ class BrowserAgent {
    */
   stopStreaming(pageId = 'default') {
     const pageData = this.pages.get(pageId);
-    if (pageData && pageData.streamingInterval) {
-      clearInterval(pageData.streamingInterval);
+    if (pageData && pageData.streaming) {
+      pageData.streaming = false;
       pageData.streamingInterval = null;
+      if (pageData.streamingTimeout) {
+        clearTimeout(pageData.streamingTimeout);
+        pageData.streamingTimeout = null;
+      }
       console.log(`[BrowserAgent] Stopped stream for page: ${pageId}`);
     }
   }
