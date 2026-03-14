@@ -6,7 +6,7 @@
 class DataGenerator {
   constructor() {
     this.firstNames = ['Ahmed', 'Mohamed', 'Sarah', 'Fatima', 'Omar', 'Laila', 'Zaid', 'Nour', 'Youssef', 'Mariam', 'Khaled', 'Huda', 'Ali', 'Reem', 'Mustafa'];
-    this.lastNames = ['Mansour', 'Hassan', 'Zaid', 'Al-Fahad', 'Salem', 'Ibrahim', 'Khalil', 'Abbas', 'Suleiman', 'Bakir', 'Amer', 'Nasser', 'Ghanem', 'Khoury', 'Haddad'];
+    this.lastNames = ['Mansour', 'Hassan', 'Zaid', 'Fahad', 'Salem', 'Ibrahim', 'Khalil', 'Abbas', 'Suleiman', 'Bakir', 'Amer', 'Nasser', 'Ghanem', 'Khoury', 'Haddad'];
     this.domains = ['gmail.com', 'outlook.com', 'yahoo.com', 'icloud.com'];
   }
 

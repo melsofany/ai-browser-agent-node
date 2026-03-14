@@ -31,7 +31,7 @@ async function pushToGithub() {
     execSync('git add .');
 
     console.log('💾 عمل Commit...');
-    const commitMsg = "Fix: Resolve ChromaDB auth, Accessibility API crash, and executor scope errors";
+    const commitMsg = "Fix: Improve form data quality, fix truncated error logs, and enhance AI failure recovery";
     try {
       execSync(`git commit -m "${commitMsg}"`);
     } catch (e) {

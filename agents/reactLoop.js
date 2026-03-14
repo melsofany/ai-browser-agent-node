@@ -353,7 +353,7 @@ class ReActLoop extends EventEmitter {
         }
 
         if (!verification.success) {
-          console.warn('[ReActLoop] Verification failed, action may not have worked');
+          console.warn(`[ReActLoop] Verification failed for action "${plan.nextAction.type}": ${verification.reason}`);
           const failReason = isArabic ? `فشل التحقق: ${verification.reason}` : `Verification failed: ${verification.reason}`;
           this.taskContext.errors.push(failReason);
           
@@ -495,6 +495,7 @@ Accessibility Tree:
 ${context.accessibilityTree || 'No tree available'}
 Interactive elements count: ${context.interactiveElements?.length || 0}
 Recent actions: ${JSON.stringify(context.results.slice(-3))}
+Recent errors: ${JSON.stringify(context.errors.slice(-3))}
 Relevant memories: ${JSON.stringify(context.relevantMemories || {})}
 
 Please analyze the current state.` 
@@ -530,6 +531,7 @@ Accessibility Tree:
 ${context.accessibilityTree || 'No tree available'}
 Interactive elements count: ${context.interactiveElements?.length || 0}
 Recent actions: ${JSON.stringify(context.results.slice(-3))}
+Recent errors: ${JSON.stringify(context.errors.slice(-3))}
 Relevant memories: ${JSON.stringify(context.relevantMemories || {})}` }] }],
               config: { responseMimeType: "application/json" }
             });
@@ -776,7 +778,7 @@ Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ 
           : [String(newObservation.analysis.errors)];
           
         if (errors.length > 0 && errors[0] !== 'null' && errors[0] !== 'undefined') {
-          console.warn('[ReActLoop] VERIFY: New errors detected after action:', errors);
+          console.warn(`[ReActLoop] VERIFY: New errors detected after action: ${JSON.stringify(errors)}`);
           return { 
             success: false, 
             reason: `Errors detected: ${errors.join(', ')}`,
