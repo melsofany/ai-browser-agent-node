@@ -1,0 +1,154 @@
+import express from 'express';
+import http from 'http';
+import { Server as SocketServer } from 'socket.io';
+import path from 'path';
+import { createServer as createViteServer } from 'vite';
+import initializeRoutes from './api/routes';
+import TaskController from './controllers/taskController';
+import config from './config/config';
+
+async function startServer() {
+  const app = express();
+  const server = http.createServer(app);
+  const io = new SocketServer(server, {
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST'],
+    },
+  });
+
+  const taskController = new TaskController();
+
+  // Setup task events for WebSocket
+  taskController.on('taskUpdate', (update) => {
+    io.emit('taskUpdate', update);
+  });
+
+  taskController.on('taskStart', (data) => {
+    io.emit('taskStart', data);
+  });
+
+  taskController.on('taskSuccess', (data) => {
+    io.emit('taskSuccess', data);
+  });
+
+  taskController.on('taskFail', (data) => {
+    io.emit('taskFail', data);
+  });
+
+  taskController.on('log', (log) => {
+    io.emit('log', log);
+  });
+
+  taskController.on('thinking', (content) => {
+    io.emit('thinking', {
+      timestamp: new Date(),
+      content
+    });
+  });
+
+  // Middleware
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
+  // API Routes
+  const routes = initializeRoutes(taskController, io);
+  app.use('/api', routes);
+
+  // WebSocket connections
+  io.on('connection', (socket) => {
+    console.log(`[WebSocket] Client connected: ${socket.id}`);
+
+    socket.on('browserEvent', async (event) => {
+      await taskController.handleBrowserEvent(event);
+    });
+
+    socket.emit('connected', {
+      message: 'Connected to AI Agent Platform',
+      timestamp: new Date(),
+    });
+
+    socket.on('submitTask', async (taskData) => {
+      try {
+        const result = await taskController.submitTask(taskData);
+        socket.emit('taskSubmitted', result);
+        io.emit('taskUpdate', { type: 'submitted', ...result });
+      } catch (error: any) {
+        socket.emit('error', { message: error.message });
+      }
+    });
+
+    socket.on('executeTask', async (taskId) => {
+      try {
+        const result = await taskController.executeTask(taskId);
+        socket.emit('taskExecuted', { taskId, ...result });
+        io.emit('taskUpdate', { type: 'executed', taskId, ...result });
+      } catch (error: any) {
+        socket.emit('error', { message: error.message });
+      }
+    });
+
+    socket.on('resumeTask', async (taskId) => {
+      try {
+        const result = await taskController.resumeTask(taskId);
+        socket.emit('taskResumed', { taskId, ...result });
+        io.emit('taskUpdate', { type: 'resumed', taskId, ...result });
+      } catch (error: any) {
+        socket.emit('error', { message: error.message });
+      }
+    });
+
+    socket.on('triggerSelfImprovement', async () => {
+      try {
+        const result = await taskController.triggerSelfImprovement();
+        socket.emit('selfImprovementTriggered', result);
+      } catch (error: any) {
+        socket.emit('error', { message: error.message });
+      }
+    });
+
+    socket.on('getStatus', () => {
+      const tasks = taskController.getAllTasks();
+      const logs = taskController.getLogs(10);
+      socket.emit('status', { tasks, logs, timestamp: new Date() });
+    });
+
+    socket.on('disconnect', () => {
+      console.log(`[WebSocket] Client disconnected: ${socket.id}`);
+    });
+  });
+
+  // Vite integration
+  if (process.env.NODE_ENV !== 'production') {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
+  }
+
+  const PORT = Number(config.port) || 3000;
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n========================================`);
+    console.log(`AI Agent Platform Started`);
+    console.log(`========================================`);
+    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`========================================\n`);
+  });
+
+  // Initialize browser in background to avoid blocking server startup
+  taskController.initializeBrowser(io).catch(error => {
+    console.error('Failed to initialize browser:', error);
+  });
+}
+
+startServer().catch(err => {
+  console.error('Server failed to start:', err);
+  process.exit(1);
+});

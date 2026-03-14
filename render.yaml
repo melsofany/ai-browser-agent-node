@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: ai-browser-agent
+    runtime: node
+    plan: standard
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: GITHUB_TOKEN
+        fromDatabase:
+          name: github_token
+      - key: DEEPSEEK_API_KEY
+        fromDatabase:
+          name: deepseek_api_key
+      - key: RENDER_API_KEY
+        fromDatabase:
+          name: render_api_key
+      - key: LOG_LEVEL
+        value: info
+      - key: BROWSER_TIMEOUT
+        value: 30000
+      - key: MAX_CONCURRENT_TASKS
+        value: 5
+      - key: MEMORY_BACKEND
+        value: memory
+    healthCheckPath: /health
+    healthCheckInterval: 30
+    healthCheckTimeout: 10
+    healthCheckStartPeriod: 5
+    healthCheckRetries: 3
+    dockerfilePath: ./Dockerfile
