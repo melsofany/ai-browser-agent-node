@@ -28,6 +28,9 @@ class VectorMemory {
   async initChroma() {
     try {
       this.chromaClient = new chromadb.ChromaClient();
+      // Test connection
+      await this.chromaClient.version();
+      
       this.collection = await this.chromaClient.getOrCreateCollection({
         name: "agent_memory",
         metadata: { "description": "AI Agent Memory Store" }
@@ -35,7 +38,11 @@ class VectorMemory {
       this.useChroma = true;
       console.log('[VectorMemory] ChromaDB initialized successfully');
     } catch (error) {
-      console.error('[VectorMemory] ChromaDB initialization failed:', error.message);
+      if (error.message.includes('Unauthorized')) {
+        console.warn('[VectorMemory] ChromaDB unauthorized. Falling back to in-memory store.');
+      } else {
+        console.error('[VectorMemory] ChromaDB initialization failed:', error.message);
+      }
       this.useChroma = false;
     }
   }

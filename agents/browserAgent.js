@@ -337,8 +337,9 @@ class BrowserAgent {
     console.log(`[BrowserAgent] Extracting accessibility tree for page: ${pageId}`);
     try {
       const page = this.pages.get(pageId)?.page;
-      if (!page) {
-        return { success: false, error: 'Page not found' };
+      if (!page || !page.accessibility) {
+        console.warn('[BrowserAgent] Accessibility API not available on this page/browser version.');
+        return { success: false, error: 'Accessibility API not available' };
       }
 
       const snapshot = await page.accessibility.snapshot();

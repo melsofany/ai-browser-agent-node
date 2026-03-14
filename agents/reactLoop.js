@@ -273,7 +273,7 @@ class ReActLoop extends EventEmitter {
               ? `${actionMessage} (${isArabic ? 'المحاولة' : 'Attempt'} ${retryCount + 1})` 
               : actionMessage
           });
-          action = await this.act(plan.nextAction, browser, executor);
+          action = await this.act(plan.nextAction, browser, this.executor);
           this.lastAction = action;
 
           if (action.success) {
