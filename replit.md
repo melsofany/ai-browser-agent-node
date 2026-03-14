@@ -33,8 +33,7 @@ The workflow "Start application" is configured to run this automatically.
 
 ## Environment Variables
 Required (set in Secrets):
-- `GEMINI_API_KEY` - For Gemini AI features
-- `DEEPSEEK_API_KEY` - Optional DeepSeek API
+- `DEEPSEEK_API_KEY` - Primary AI model for planning and reasoning
 - `OPENAI_API_KEY` - For OpenAI-based integrations
 - `GITHUB_TOKEN` - For GitHub push functionality
 
@@ -48,8 +47,8 @@ System libraries installed for Playwright: glib, nss, nspr, atk, at-spi2-atk, cu
 ## Bug Fixes Applied
 - Added missing `getObservation()` method to `BrowserAgent` (was called by `ReActLoop` but didn't exist)
 - Fixed `getAccessibilityTree()` to use `page.ariaSnapshot()` (Playwright v1.46+ API) instead of removed `page.accessibility.snapshot()`
-- Fixed Gemini model name from `gemini-3-flash-preview` (invalid) to `gemini-2.0-flash` in both `plannerAgent.js` and `reactLoop.js`
 - Added browser initialization fallback to system Chromium for NixOS/Replit environment
+- Removed Gemini (Google AI) dependency - media tools now return a disabled message
 
 ## Deployment
 Configured as `vm` deployment (needs persistent state for WebSocket + browser agent):
