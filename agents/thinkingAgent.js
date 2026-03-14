@@ -4,7 +4,6 @@
  * Similar to Manus thinking display
  */
 
-const { GoogleGenAI } = require('@google/genai');
 const axios = require('axios');
 const config = require('../config/config');
 
@@ -13,11 +12,6 @@ class ThinkingAgent {
     this.thinkingLogs = [];
     this.currentTaskId = null;
     this.listeners = [];
-    
-    // Initialize Gemini
-    if (config.geminiApiKey) {
-      this.genAI = new GoogleGenAI({ apiKey: config.geminiApiKey });
-    }
     
     // Initialize DeepSeek
     this.deepseekApiKey = config.deepseekApiKey;
@@ -127,7 +121,7 @@ class ThinkingAgent {
   async generateThinking(taskDescription, taskType) {
     console.log('[ThinkingAgent] Generating thinking logs...');
     
-    if (!this.genAI && !this.deepseekApiKey) {
+    if (!this.deepseekApiKey) {
       console.warn('[ThinkingAgent] No AI API keys configured');
       return [];
     }
@@ -137,29 +131,19 @@ Provide your reasoning in 1-2 short sentences maximum. Focus ONLY on the immedia
 Do NOT be verbose. Save tokens.`;
 
     try {
-      let thinkingContent;
-      
-      if (this.deepseekApiKey) {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Task: ${taskDescription}\nType: ${taskType}` }
-          ]
-        }, {
-          headers: {
-            'Authorization': `Bearer ${this.deepseekApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        thinkingContent = response.data.choices[0].message.content;
-      } else if (this.genAI) {
-        const result = await this.genAI.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nTask: ${taskDescription}\nType: ${taskType}` }] }],
-        });
-        thinkingContent = result.text;
-      }
+      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Task: ${taskDescription}\nType: ${taskType}` }
+        ]
+      }, {
+        headers: {
+          'Authorization': `Bearer ${this.deepseekApiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const thinkingContent = response.data.choices[0].message.content;
       
       // Split thinking into logical chunks
       const chunks = this.splitThinking(thinkingContent);
@@ -240,7 +224,7 @@ Do NOT be verbose. Save tokens.`;
   async reasonAboutComplexTask(taskDescription, context = {}) {
     console.log('[ThinkingAgent] Reasoning about complex task...');
     
-    if (!this.deepseekApiKey && !this.genAI) {
+    if (!this.deepseekApiKey) {
       return null;
     }
 
@@ -254,8 +238,6 @@ Do NOT be verbose. Save tokens.`;
 Return as structured JSON.`;
 
     try {
-      let responseText;
-      
       // Sanitize context to avoid circular structures
       const sanitizedContext = {};
       if (context) {
@@ -263,35 +245,25 @@ Return as structured JSON.`;
           if (typeof context[key] !== 'object' || context[key] === null) {
             sanitizedContext[key] = context[key];
           } else {
-            // Simple shallow copy for objects to avoid deep circularity
             sanitizedContext[key] = Array.isArray(context[key]) ? '[Array]' : '[Object]';
           }
         }
       }
 
-      if (this.deepseekApiKey) {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Task: ${taskDescription}\nContext: ${JSON.stringify(sanitizedContext)}` }
-          ],
-        }, {
-          headers: {
-            'Authorization': `Bearer ${this.deepseekApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 60000
-        });
-        responseText = response.data.choices[0].message.content;
-      } else {
-        const result = await this.genAI.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nTask: ${taskDescription}\nContext: ${JSON.stringify(sanitizedContext)}` }] }],
-          config: { responseMimeType: "application/json" }
-        });
-        responseText = result.text;
-      }
+      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Task: ${taskDescription}\nContext: ${JSON.stringify(sanitizedContext)}` }
+        ],
+      }, {
+        headers: {
+          'Authorization': `Bearer ${this.deepseekApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      });
+      const responseText = response.data.choices[0].message.content;
 
       const reasoning = this.safeJsonParse(responseText);
       return reasoning;
@@ -307,7 +279,7 @@ Return as structured JSON.`;
   async generateExecutionThinking(step, previousResults = []) {
     console.log('[ThinkingAgent] Generating execution thinking...');
     
-    if (!this.deepseekApiKey && !this.genAI) {
+    if (!this.deepseekApiKey) {
       return null;
     }
 
@@ -315,8 +287,6 @@ Return as structured JSON.`;
 Be extremely concise. Save tokens.`;
 
     try {
-      let thinking;
-      
       // Sanitize input to avoid circular structures
       const sanitizedStep = {
         action: step.action,
@@ -329,27 +299,19 @@ Be extremely concise. Save tokens.`;
         ? previousResults.map(r => ({ success: r.success, error: r.error, action: r.action?.type }))
         : [];
 
-      if (this.deepseekApiKey) {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Step: ${JSON.stringify(sanitizedStep)}\nPrevious Results: ${JSON.stringify(sanitizedResults)}` }
-          ]
-        }, {
-          headers: {
-            'Authorization': `Bearer ${this.deepseekApiKey}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        thinking = response.data.choices[0].message.content;
-      } else if (this.genAI) {
-        const result = await this.genAI.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nStep: ${JSON.stringify(sanitizedStep)}\nPrevious Results: ${JSON.stringify(sanitizedResults)}` }] }],
-        });
-        thinking = result.text;
-      }
+      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Step: ${JSON.stringify(sanitizedStep)}\nPrevious Results: ${JSON.stringify(sanitizedResults)}` }
+        ]
+      }, {
+        headers: {
+          'Authorization': `Bearer ${this.deepseekApiKey}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      const thinking = response.data.choices[0].message.content;
 
       this.addThinkingLog(thinking);
       return thinking;

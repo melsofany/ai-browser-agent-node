@@ -6,7 +6,6 @@
 
 const axios = require('axios');
 const config = require('../config/config');
-const { GoogleGenAI } = require('@google/genai');
 const MemorySystem = require('./memorySystem');
 const SelfImprovementAgent = require('./selfImprovementAgent');
 const fs = require('fs');
@@ -32,9 +31,6 @@ class ReActLoop extends EventEmitter {
     this.lastAction = null;
     this.lastVerification = null;
 
-    // Initialize Gemini
-    if (config.geminiApiKey) {
-      this.genAI = new GoogleGenAI({ apiKey: config.geminiApiKey });
     }
   }
 
@@ -368,7 +364,7 @@ class ReActLoop extends EventEmitter {
   async think(observation, context) {
     console.log('[ReActLoop] THINK: Reasoning about next steps...');
     
-    if (!config.deepseekApiKey && !this.genAI) {
+    if (!config.deepseekApiKey) {
       return this.thinkLocally(observation, context);
     }
 
@@ -382,15 +378,13 @@ class ReActLoop extends EventEmitter {
 ${languageInstruction}
 Return ONLY a valid JSON object with: currentState, progress, obstacles, taskComplete, nextSteps, confidence. Do not include markdown blocks.`;
 
-      let responseText;
-      if (config.deepseekApiKey) {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { 
-              role: 'user', 
-              content: `Task: ${context.task.description}
+      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { 
+            role: 'user', 
+            content: `Task: ${context.task.description}
 Current URL: ${context.pageUrl || 'unknown'}
 Current page title: ${context.pageTitle || 'unknown'}
 Page analysis: ${JSON.stringify(context.analysis || {})}
@@ -402,58 +396,18 @@ Recent errors: ${JSON.stringify(context.errors.slice(-3))}
 Relevant memories: ${JSON.stringify(context.relevantMemories || {})}
 
 Please analyze the current state.` 
-            }
-          ],
-          temperature: 0.5,
-          max_tokens: 800
-        }, {
-          headers: {
-            'Authorization': `Bearer ${config.deepseekApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 60000 // Increased timeout
-        });
-        responseText = response.data.choices[0].message.content;
-      } else {
-        // Retry logic for Gemini
-        let retryCount = 0;
-        const maxRetries = 2;
-        
-        while (retryCount <= maxRetries) {
-          try {
-            const result = await this.genAI.models.generateContent({
-              model: 'gemini-2.0-flash',
-              contents: [{ role: 'user', parts: [{ text: `${systemPrompt}
-
-Task: ${context.task.description}
-Current URL: ${context.pageUrl || 'unknown'}
-Current page title: ${context.pageTitle || 'unknown'}
-Page analysis: ${JSON.stringify(context.analysis || {})}
-Accessibility Tree:
-${context.accessibilityTree || 'No tree available'}
-Interactive elements count: ${context.interactiveElements?.length || 0}
-Recent actions: ${JSON.stringify(context.results.slice(-3))}
-Recent errors: ${JSON.stringify(context.errors.slice(-3))}
-Relevant memories: ${JSON.stringify(context.relevantMemories || {})}` }] }],
-              config: { responseMimeType: "application/json" }
-            });
-            responseText = result.text;
-            break;
-          } catch (geminiError) {
-            if (geminiError.message.includes('API key not valid')) {
-              console.error('[ReActLoop] CRITICAL ERROR: The Gemini API Key provided is invalid. Please check your AI Studio Secrets.');
-              throw geminiError;
-            }
-            if (geminiError.message.includes('aborted') && retryCount < maxRetries) {
-              retryCount++;
-              console.warn(`[ReActLoop] Gemini thinking aborted, retrying (${retryCount}/${maxRetries})...`);
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              continue;
-            }
-            throw geminiError;
           }
-        }
-      }
+        ],
+        temperature: 0.5,
+        max_tokens: 800
+      }, {
+        headers: {
+          'Authorization': `Bearer ${config.deepseekApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      });
+      const responseText = response.data.choices[0].message.content;
 
       const thinking = this.safeJsonParse(responseText);
       console.log('[ReActLoop] AI Thinking Result:', JSON.stringify(thinking, null, 2));
@@ -498,7 +452,7 @@ Relevant memories: ${JSON.stringify(context.relevantMemories || {})}` }] }],
   async plan(thought, context) {
     console.log('[ReActLoop] PLAN: Creating action plan...');
     
-    if (!config.deepseekApiKey && !this.genAI) {
+    if (!config.deepseekApiKey) {
       return this.planLocally(thought, context);
     }
 
@@ -544,52 +498,29 @@ Available actions (use these EXACT types):
 IMPORTANT: Keep 'reasoning' extremely brief and direct.
 Return ONLY a valid JSON object with: nextAction (object with 'type' and 'params'), reasoning, confidence. Do not include markdown blocks.`;
 
-      let responseText;
-      if (config.deepseekApiKey) {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { 
-              role: 'user', 
-              content: `Task: ${context.task.description}
+      const planResponse = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { 
+            role: 'user', 
+            content: `Task: ${context.task.description}
 Current Thoughts: ${JSON.stringify(thought)}
 Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ id: e.id, tag: e.tag, text: e.text, label: e.label, role: e.role, type: e.type, placeholder: e.placeholder, options: e.options })) || [])}
 
 Plan the next action.` 
-            }
-          ],
-          temperature: 0.4,
-          max_tokens: 500
-        }, {
-          headers: {
-            'Authorization': `Bearer ${config.deepseekApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 60000 // Increased timeout
-        });
-        responseText = response.data.choices[0].message.content;
-      } else {
-        try {
-          const result = await this.genAI.models.generateContent({
-            model: 'gemini-2.0-flash',
-            contents: [{ role: 'user', parts: [{ text: `${systemPrompt}
-
-Task: ${context.task.description}
-Current Thoughts: ${JSON.stringify(thought)}
-Interactive Elements: ${JSON.stringify(context.interactiveElements?.map(e => ({ id: e.id, tag: e.tag, text: e.text, label: e.label, role: e.role, type: e.type, placeholder: e.placeholder, options: e.options })) || [])}` }] }],
-            config: { responseMimeType: "application/json" }
-          });
-          responseText = result.text;
-        } catch (geminiError) {
-          if (geminiError.message.includes('API key not valid')) {
-            console.error('[ReActLoop] CRITICAL ERROR: The Gemini API Key provided is invalid. Please check your AI Studio Secrets.');
-          } else {
-            console.error('[ReActLoop] Gemini planning error:', geminiError.message);
           }
-          throw geminiError;
-        }
-      }
+        ],
+        temperature: 0.4,
+        max_tokens: 500
+      }, {
+        headers: {
+          'Authorization': `Bearer ${config.deepseekApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      });
+      const responseText = planResponse.data.choices[0].message.content;
 
       const planning = this.safeJsonParse(responseText);
       console.log('[ReActLoop] AI Planning Result:', JSON.stringify(planning, null, 2));

@@ -350,74 +350,12 @@ class VisionNavigator {
    * Analyze screenshot for elements using AI
    */
   async analyzeScreenshotForElements(screenshotPath, description) {
-    if (!config.geminiApiKey && !config.deepseekApiKey) {
+    if (!config.deepseekApiKey) {
       return this.analyzeScreenshotLocally(screenshotPath, description);
     }
 
     try {
-      // Read image file
-      const imageBuffer = await fs.readFile(screenshotPath);
-      const base64Image = imageBuffer.toString('base64');
-
-        // Prefer Gemini 3 for vision tasks if available
-      if (config.geminiApiKey) {
-        console.log('[VisionNavigator] Using Gemini 3 for visual analysis...');
-        const { GoogleGenAI } = require('@google/genai');
-        const ai = new GoogleGenAI({ apiKey: config.geminiApiKey });
-        
-        const prompt = `You are a visual element detector for web automation. 
-Analyze the provided screenshot and find elements matching the description: "${description}".
-For each matching element, provide:
-1. label: A short descriptive label
-2. x, y: The center coordinates of the element in the image (0-1280 for x, 0-720 for y)
-3. confidence: Your confidence score (0-1)
-4. elementType: The type of element (button, input, link, etc.)
-
-Return the results as a JSON array of objects.`;
-
-        let retryCount = 0;
-        const maxRetries = 2;
-        let response;
-
-        while (retryCount <= maxRetries) {
-          try {
-            response = await ai.models.generateContent({
-              model: 'gemini-3-flash-preview',
-              contents: [
-                {
-                  role: 'user',
-                  parts: [
-                    { text: prompt },
-                    {
-                      inlineData: {
-                        mimeType: 'image/png',
-                        data: base64Image
-                      }
-                    }
-                  ]
-                }
-              ],
-              config: {
-                responseMimeType: 'application/json'
-              }
-            });
-            break;
-          } catch (geminiError) {
-            if (geminiError.message.includes('aborted') && retryCount < maxRetries) {
-              retryCount++;
-              console.warn(`[VisionNavigator] Gemini analysis aborted, retrying (${retryCount}/${maxRetries})...`);
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              continue;
-            }
-            throw geminiError;
-          }
-        }
-
-        const result = this.safeJsonParse(response.text);
-        return Array.isArray(result) ? result : result.elements || [];
-      }
-
-      // Fallback to DeepSeek (if it supports vision in the future or via text description)
+      // Use DeepSeek for element detection via text description
       const systemPrompt = `You are a visual element detector. Analyze the screenshot and find elements matching the description.
 For each match, provide:
 1. label: Element description

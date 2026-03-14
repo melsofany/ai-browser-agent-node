@@ -4,7 +4,6 @@
  * Uses DeepSeek AI for intelligent planning if API key is available
  */
 
-const { GoogleGenAI } = require('@google/genai');
 const axios = require('axios');
 const config = require('../config/config');
 
@@ -12,11 +11,6 @@ class PlannerAgent {
   constructor() {
     this.taskQueue = [];
     this.executedTasks = [];
-    
-    // Initialize Gemini
-    if (config.geminiApiKey) {
-      this.genAI = new GoogleGenAI({ apiKey: config.geminiApiKey });
-    }
     
     // Initialize DeepSeek
     this.deepseekApiKey = config.deepseekApiKey;
@@ -139,7 +133,7 @@ class PlannerAgent {
   async generatePlan(goal, context = {}) {
     console.log(`[PlannerAgent] Generating plan for goal: ${goal}`);
     
-    if (!this.deepseekApiKey && !this.genAI) {
+    if (!this.deepseekApiKey) {
       return this.generatePlanLocally(goal);
     }
 
@@ -171,30 +165,20 @@ Return ONLY a valid JSON object (no markdown blocks, no preamble):
   "requiredTools": ["browser", "terminal", "filesystem"]
 }`;
 
-      let responseText;
-      if (this.deepseekApiKey) {
-        const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
-          model: 'deepseek-chat',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: `Goal: ${goal}\nContext: ${JSON.stringify(context)}` }
-          ],
-        }, {
-          headers: { 
-            'Authorization': `Bearer ${this.deepseekApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 60000
-        });
-        responseText = response.data.choices[0].message.content;
-      } else {
-        const result = await this.genAI.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nGoal: ${goal}\nContext: ${JSON.stringify(context)}` }] }],
-          config: { responseMimeType: "application/json" }
-        });
-        responseText = result.text;
-      }
+      const response = await axios.post('https://api.deepseek.com/v1/chat/completions', {
+        model: 'deepseek-chat',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Goal: ${goal}\nContext: ${JSON.stringify(context)}` }
+        ],
+      }, {
+        headers: { 
+          'Authorization': `Bearer ${this.deepseekApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
+      });
+      const responseText = response.data.choices[0].message.content;
 
       const plan = this.safeJsonParse(responseText);
       return { success: true, plan };
@@ -234,14 +218,10 @@ Return ONLY a valid JSON object (no markdown blocks, no preamble):
 
     // Auto-determine priority and type using DeepSeek or Gemini
     if (!type || type === 'auto') {
-      if (this.deepseekApiKey || this.genAI) {
+      if (this.deepseekApiKey) {
         try {
           let analysis = null;
-          if (this.deepseekApiKey) {
-            analysis = await this.analyzeTaskWithDeepSeek(description, type);
-          } else if (this.genAI) {
-            analysis = await this.analyzeTaskWithGemini(description, type);
-          }
+          analysis = await this.analyzeTaskWithDeepSeek(description, type);
           
           if (analysis) {
             type = analysis.type || type;
@@ -273,15 +253,9 @@ Return ONLY a valid JSON object (no markdown blocks, no preamble):
 
     let steps = [];
 
-    // Try to use DeepSeek or Gemini if API keys are available
-    if (this.deepseekApiKey || this.genAI) {
+    if (this.deepseekApiKey) {
       try {
-        // Prefer DeepSeek for planning if requested
-        if (this.deepseekApiKey) {
-          steps = await this.planWithDeepSeek(description, type);
-        } else if (this.genAI) {
-          steps = await this.planWithGemini(description, type);
-        }
+        steps = await this.planWithDeepSeek(description, type);
 
         if (!steps || steps.length === 0) {
           console.warn('[PlannerAgent] AI returned empty steps, falling back to rule-based planning');
@@ -354,44 +328,6 @@ Example: { "type": "browser", "priority": "high" }`;
       return null;
     } catch (err) {
       console.error('[PlannerAgent] DeepSeek task analysis error:', err.message);
-      return null;
-    }
-  }
-
-  /**
-   * Analyze task to auto-determine type and priority using Gemini
-   */
-  async analyzeTaskWithGemini(description, type) {
-    console.log('[PlannerAgent] Analyzing task with Gemini...');
-    
-    const systemPrompt = `You are a task analyzer. Analyze the user's request and determine:
-1. The task type: 'browser' for web automation, 'system' for system commands, 'development' for git/file operations, or 'auto' for auto-detection
-2. The priority: 'high' for urgent/important, 'normal' for regular, 'low' for background tasks
-
-Return ONLY a valid JSON object with "type" and "priority" fields.
-Example: { "type": "browser", "priority": "high" }`;
-
-    try {
-      const result = await this.genAI.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nTask: ${description}` }] }],
-        config: { responseMimeType: "application/json" }
-      });
-
-      const content = result.text;
-      const parsed = this.safeJsonParse(content);
-      
-      // Validate the response
-      if (parsed.type && parsed.priority) {
-        return parsed;
-      }
-      return null;
-    } catch (err) {
-      if (err.message.includes('API key not valid')) {
-        console.error('[PlannerAgent] CRITICAL ERROR: The Gemini API Key provided is invalid. Please check your AI Studio Secrets.');
-      } else {
-        console.error('[PlannerAgent] Task analysis error:', err.message);
-      }
       return null;
     }
   }
@@ -471,77 +407,6 @@ CRITICAL: Return ONLY the raw JSON array. Do not include markdown code blocks or
         console.error('[PlannerAgent] DeepSeek API Error:', err.message);
         throw err;
       }
-    }
-  }
-
-  /**
-   * Plan using Gemini AI
-   */
-  async planWithGemini(description, type) {
-    console.log('[PlannerAgent] Planning with Gemini...');
-    
-    const systemPrompt = `You are an AI task planner. Break down the user's request into a series of executable steps for an automated browser agent.
-The goal is to create a detailed and flexible plan, keeping in mind that the agent may need to replan based on observations.
-
-Available Actions:
-- browser:navigate { "url": "string", "description": "string" } : Navigate to a specific URL.
-- browser:click { "selector": "string", "description": "string" } : Click on an element on the page using a CSS selector.
-- browser:type { "selector": "string", "text": "string", "description": "string" } : Type text into an input element. CRITICAL: Use SEMI-REALISTIC data for names, emails, and passwords (e.g., "Sarah Smith", "sarah.test@gmail.com", "Secure#User99").
-- browser:submit { "selector": "string", "description": "string" } : Submit a form.
-- browser:extract { "selector": "string", "description": "string" } : Extract content from the page (can be a specific selector or the entire page).
-- browser:waitForSelector { "selector": "string", "timeout": "number", "description": "string" } : Wait for an element to appear on the page.
-- browser:waitForUser { "description": "string" } : Pause execution and wait for human intervention (e.g., solving a CAPTCHA, manual login, or complex decision).
-- browser:screenshot { "filePath": "string", "description": "string" } : Take a screenshot of the page.
-- browser:evaluate { "script": "string", "description": "string" } : Execute JavaScript in the browser context.
-- media:generate_image { "prompt": "string", "aspectRatio": "string" } : Generate an image from text.
-- media:analyze_audio { "audioData": "string", "mimeType": "string", "prompt": "string" } : Analyze audio content.
-- data:summarize_json { "data": "object" } : Summarize JSON data.
-- data:filter_collection { "collection": "array", "key": "string", "value": "any" } : Filter a collection.
-- utility:render_diagram { "code": "string", "format": "string" } : Render a diagram from code.
-- utility:md_to_pdf { "markdown": "string", "outputPath": "string" } : Convert Markdown to PDF.
-- utility:project_init { "projectName": "string", "template": "string" } : Initialize a new project structure.
-- scheduling:schedule_task { "delayMs": "number", "taskDescription": "string" } : Schedule a task for later.
-- skill:use_skill { "skillName": "string", "params": "object" } : Use a predefined complex skill (e.g., web_development, deep_research).
-- system:execute { "command": "string", "description": "string" } : Execute an OS command.
-- system:readFile { "filePath": "string", "description": "string" } : Read the content of a file.
-- system:writeFile { "filePath": "string", "content": "string", "description": "string" } : Write content to a file.
-- agent:replan { "reason": "string", "description": "string" } : Request a task replan due to an unexpected obstacle or need for a new approach.
-
-The plan must be a JSON array of steps. Each step must contain: "order" (number), "action" (string), "params" (object), and "description" (string).
-Each step should have "reasoning" explaining why this step is being taken.
-
-Example:
-[
-  { "order": 1, "action": "browser:navigate", "params": { "url": "https://google.com" }, "description": "Navigate to Google", "reasoning": "The first step is to search for the required product." },
-  { "order": 2, "action": "browser:type", "params": { "selector": "input[name='q']", "text": "best laptop" }, "description": "Search for best laptop", "reasoning": "Enter the search term in the search bar." },
-  { "order": 3, "action": "browser:click", "params": { "selector": "button[type='submit']" }, "description": "Click search button", "reasoning": "Confirm the search operation." },
-  { "order": 4, "action": "browser:extract", "params": { "selector": ".search-results" }, "description": "Extract search results", "reasoning": "Get a list of the displayed products." }
-]`;
-
-    try {
-      const result = await this.genAI.models.generateContent({
-        model: 'gemini-2.0-flash',
-        contents: [{ role: 'user', parts: [{ text: `Task: ${description}\nType: ${type || 'auto'}\n\n${systemPrompt}` }] }],
-        config: { responseMimeType: "application/json" }
-      });
-
-      const content = result.text;
-      console.log('[PlannerAgent] Gemini response:', content);
-      
-      const parsed = this.safeJsonParse(content);
-      
-      // Handle different possible JSON structures from LLM
-      if (Array.isArray(parsed)) return parsed;
-      if (parsed.steps && Array.isArray(parsed.steps)) return parsed.steps;
-      
-      // If it's a single object that's not an array, maybe it's one step
-      if (parsed.action && parsed.params) return [parsed];
-      if (parsed.nextAction && parsed.reasoning) return [parsed.nextAction]; 
-      
-      return [];
-    } catch (err) {
-      console.error('[PlannerAgent] Gemini API Error:', err.message);
-      throw err;
     }
   }
 
@@ -768,13 +633,6 @@ Return a JSON object with a "subtasks" array.`;
           timeout: 60000
         });
         content = response.data.choices[0].message.content;
-      } else if (this.genAI) {
-        const result = await this.genAI.models.generateContent({
-          model: 'gemini-2.0-flash',
-          contents: [{ role: 'user', parts: [{ text: `${systemPrompt}\n\nTask: ${taskDescription}` }] }],
-          config: { responseMimeType: "application/json" }
-        });
-        content = result.text;
       }
 
       const parsed = this.safeJsonParse(content);

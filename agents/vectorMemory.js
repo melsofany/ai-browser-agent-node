@@ -1,9 +1,8 @@
 /**
  * Vector Memory System
- * Provides semantic search capabilities using embeddings
+ * Provides text-based search capabilities using keyword matching
  */
 
-const { GoogleGenAI } = require("@google/genai");
 let chromadb;
 try {
   chromadb = require("chromadb");
@@ -12,10 +11,8 @@ try {
 }
 
 class VectorMemory {
-  constructor(apiKey) {
-    this.apiKey = apiKey || process.env.GEMINI_API_KEY;
-    this.ai = this.apiKey ? new GoogleGenAI({ apiKey: this.apiKey }) : null;
-    this.vectors = []; // In-memory fallback
+  constructor() {
+    this.vectors = []; // In-memory store
     this.chromaClient = null;
     this.collection = null;
     this.useChroma = false;
@@ -63,23 +60,14 @@ class VectorMemory {
   }
 
   /**
-   * Get embedding for text
+   * Compute keyword-based similarity score between two texts
    */
-  async getEmbedding(text) {
-    if (!this.ai) {
-      throw new Error('GoogleGenAI not initialized. API key missing.');
-    }
-
-    try {
-      const result = await this.ai.models.embedContent({
-        model: 'gemini-embedding-2-preview',
-        contents: [text]
-      });
-      return result.embeddings[0].values;
-    } catch (error) {
-      console.error('[VectorMemory] Embedding failed:', error.message);
-      throw error;
-    }
+  textSimilarity(textA, textB) {
+    const wordsA = new Set(textA.toLowerCase().split(/\s+/));
+    const wordsB = new Set(textB.toLowerCase().split(/\s+/));
+    const intersection = [...wordsA].filter(w => wordsB.has(w)).length;
+    const union = new Set([...wordsA, ...wordsB]).size;
+    return union === 0 ? 0 : intersection / union;
   }
 
   /**
@@ -88,76 +76,30 @@ class VectorMemory {
   async add(text, metadata = {}) {
     console.log(`[VectorMemory] Adding to memory: ${text.substring(0, 50)}...`);
     
-    try {
-      const vector = await this.getEmbedding(text);
-      
-      if (this.useChroma && this.collection) {
-        await this.collection.add({
-          ids: [Date.now().toString()],
-          embeddings: [vector],
-          metadatas: [metadata],
-          documents: [text]
-        });
-      }
-
-      // Always keep in-memory for fast access/fallback
-      this.vectors.push({
-        text,
-        vector,
-        metadata,
-        timestamp: Date.now()
-      });
-      return true;
-    } catch (error) {
-      console.error('[VectorMemory] Add failed:', error.message);
-      return false;
-    }
+    this.vectors.push({
+      text,
+      metadata,
+      timestamp: Date.now()
+    });
+    return true;
   }
 
   /**
-   * Search for similar text
+   * Search for similar text using keyword matching
    */
   async search(query, limit = 5) {
     console.log(`[VectorMemory] Searching for: ${query}`);
     
-    if (this.useChroma && this.collection) {
-      try {
-        const queryVector = await this.getEmbedding(query);
-        const results = await this.collection.query({
-          queryEmbeddings: [queryVector],
-          nResults: limit
-        });
-        
-        if (results && results.documents && results.documents[0]) {
-          return results.documents[0].map((doc, i) => ({
-            text: doc,
-            metadata: results.metadatas[0][i],
-            similarity: 1 - (results.distances ? results.distances[0][i] : 0)
-          }));
-        }
-      } catch (error) {
-        console.error('[VectorMemory] Chroma search failed, falling back to in-memory:', error.message);
-      }
-    }
-
     if (this.vectors.length === 0) return [];
 
-    try {
-      const queryVector = await this.getEmbedding(query);
-      
-      const results = this.vectors.map(item => ({
-        ...item,
-        similarity: this.cosineSimilarity(queryVector, item.vector)
-      }));
+    const results = this.vectors.map(item => ({
+      ...item,
+      similarity: this.textSimilarity(query, item.text)
+    }));
 
-      return results
-        .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, limit)
-        .map(({ vector, ...rest }) => rest); // Don't return the raw vector
-    } catch (error) {
-      console.error('[VectorMemory] Search failed:', error.message);
-      return [];
-    }
+    return results
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, limit);
   }
 
   /**
