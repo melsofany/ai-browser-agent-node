@@ -24,7 +24,15 @@ A full-stack autonomous AI agent platform with a React frontend and Express/Sock
   - `thinkingAgent.js` - Thinking logs display
   - `visionNavigator.js` - Visual element analysis
 - `config/config.js` - App configuration
-- `integrations/` - Local model integrations (Llama, Mistral, Qwen, LangGraph)
+- `integrations/` - Full source copies + local model integrations:
+  - `langgraph/` - LangGraph source (StateGraph, channels, checkpointing)
+  - `open-interpreter/` - Open Interpreter source (tools, computer-use loop)
+  - `autogpt/` - AutoGPT classic + platform source
+
+## Integration Modules (agents/)
+- `langgraphIntegration.js` - StateGraph, RetryPolicy, Checkpointing, Streaming, ReAct agent builder
+- `openInterpreterIntegration.js` - ToolCollection, BashTool, EditTool, JS/Python tools, SamplingLoop
+- `autogptIntegration.js` - Block system, BlockType/Category, AgentGraph, AgentMemory, TaskManager, SelfImprovement
 
 ## Running the App
 ```bash

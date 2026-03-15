@@ -1,6 +1,7 @@
 /**
  * Integrations Manager
  * Manages all AI model integrations: cloud (DeepSeek) + local (Ollama/Llama/Mistral/Qwen)
+ * Enhanced with LangGraph, Open Interpreter, and AutoGPT patterns.
  * Falls back to local models when cloud API is unavailable.
  */
 
@@ -11,6 +12,9 @@ const OllamaIntegration = require('./ollamaIntegration');
 const OpenInterpreterIntegration = require('./openInterpreterIntegration');
 const AutoGPTIntegration = require('./autogptIntegration');
 const LangGraphIntegration = require('./langgraphIntegration');
+const { StateGraph, RetryPolicy, InMemoryCheckpointer, FileCheckpointer, StreamMode, Command, Send, END, START } = require('./langgraphIntegration');
+const { ToolCollection, BashTool, EditTool, JavaScriptTool, PythonTool, samplingLoop } = require('./openInterpreterIntegration');
+const { Block, BlockType, BlockCategory, AgentGraph, AgentMemory, TaskManager } = require('./autogptIntegration');
 const config = require('../config/config');
 
 class IntegrationsManager {
@@ -120,8 +124,25 @@ class IntegrationsManager {
   async interpretInstruction(instruction, context = {}) {
     const interpreter = this.integrations.get('open-interpreter');
     if (!interpreter) throw new Error('Open Interpreter not available');
-
     return await interpreter.interpretInstruction(instruction, context, this.ollama);
+  }
+
+  /**
+   * Execute code directly via Open Interpreter tool system
+   */
+  async executeCode(code, language = 'javascript') {
+    const interpreter = this.integrations.get('open-interpreter');
+    if (!interpreter) throw new Error('Open Interpreter not available');
+    return await interpreter.executeCode(code, language);
+  }
+
+  /**
+   * Run a bash command using the Open Interpreter BashTool
+   */
+  async runBash(command) {
+    const interpreter = this.integrations.get('open-interpreter');
+    if (!interpreter) throw new Error('Open Interpreter not available');
+    return await interpreter.runBash(command);
   }
 
   /**
@@ -130,8 +151,81 @@ class IntegrationsManager {
   async executeAutonomousTask(goal, constraints = {}) {
     const autogpt = this.integrations.get('autogpt');
     if (!autogpt) throw new Error('AutoGPT not available');
-
     return await autogpt.executeAutonomousTask(goal, constraints, this.ollama);
+  }
+
+  /**
+   * Register a custom tool in AutoGPT integration
+   */
+  registerAgentTool(name, fn) {
+    const autogpt = this.integrations.get('autogpt');
+    if (autogpt) autogpt.registerTool(name, fn);
+    return this;
+  }
+
+  /**
+   * Build and run a LangGraph StateGraph workflow
+   */
+  async runLangGraphWorkflow(name, nodes = [], input = {}, options = {}) {
+    const lg = this.integrations.get('langgraph');
+    if (!lg) throw new Error('LangGraph not available');
+
+    if (!lg.graphs.has(name)) {
+      const schema = options.stateSchema || {};
+      const graph = lg.createStateGraph(name, schema);
+      for (const node of nodes) {
+        graph.addNode(node.name, node.fn, node.options || {});
+      }
+      if (nodes.length > 0) {
+        graph.setEntryPoint(nodes[0].name);
+        for (let i = 0; i < nodes.length - 1; i++) {
+          graph.addEdge(nodes[i].name, nodes[i + 1].name);
+        }
+      }
+      lg.compileGraph(name, { checkpointer: options.checkpointer });
+    }
+
+    return await lg.runGraph(name, input, options);
+  }
+
+  /**
+   * Stream a LangGraph workflow
+   */
+  async *streamLangGraphWorkflow(name, input = {}, options = {}) {
+    const lg = this.integrations.get('langgraph');
+    if (!lg) throw new Error('LangGraph not available');
+    yield* lg.streamGraph(name, input, { streamMode: options.streamMode || StreamMode.UPDATES, ...options });
+  }
+
+  /**
+   * Create a LangGraph ReAct agent
+   */
+  createReactAgent(tools = [], options = {}) {
+    const lg = this.integrations.get('langgraph');
+    if (!lg) throw new Error('LangGraph not available');
+    const llmClient = this.ollama;
+    return lg.createReactAgent(llmClient, tools, options);
+  }
+
+  /**
+   * Build an AutoGPT block graph and run it
+   */
+  async runBlockGraph(graphName, blocks = [], links = [], input = {}) {
+    const autogpt = this.integrations.get('autogpt');
+    if (!autogpt) throw new Error('AutoGPT not available');
+
+    let graph = autogpt.graphs.get(graphName);
+    if (!graph) {
+      graph = autogpt.createGraph(graphName);
+      for (const blockConfig of blocks) {
+        const block = autogpt.blocks.get(blockConfig.name) || blockConfig.instance;
+        if (block) graph.addBlock(block, blockConfig.position);
+      }
+      for (const link of links) {
+        graph.link(link.from, link.fromOutput, link.to, link.toInput);
+      }
+    }
+    return await autogpt.runGraph(graphName, input);
   }
 
   /**
