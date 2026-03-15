@@ -209,9 +209,15 @@ async function startServer() {
     process.exit(1);
   }
 
-  // Initialize browser in background to avoid blocking server startup
+  // Initialize browser in background with timeout to avoid blocking startup
+  const browserInitTimeout = setTimeout(() => {
+    console.warn('[Server] Browser init timeout - continuing without browser');
+  }, 30000);
+
   taskController.initializeBrowser(io).catch(error => {
-    console.warn('Browser init delayed:', error.message);
+    console.warn('[Server] Browser init skipped:', error.message);
+  }).finally(() => {
+    clearTimeout(browserInitTimeout);
   });
 
   // Graceful shutdown
