@@ -1,73 +1,131 @@
-# AI Browser Agent Platform
+# AI Browser Agent Platform - النسخة النهائية
 
-**تاريخ التحديث:** 2026-03-15
+**التاريخ:** 2026-03-15
+**الحالة:** ✅ جاهز للنشر مع قاعدة بيانات ونماذج AI
 
-## الوضع الحالي
-- ✅ محلي: يعمل بنجاح على http://0.0.0.0:5000
-- ✅ Browser: Chromium جاهز والتصفح يعمل
-- ✅ Integrations: LangGraph, Open Interpreter, AutoGPT (كل واحد له engine خاص)
-- ⏳ النشر: جاري الانتقال من Render → Railway (أسرع + أقل timeout)
+---
 
-## البنية الحالية
+## ✅ المكونات المكتملة
 
-### المكاملات:
-1. **LangGraphIntegration** - StateGraph, Channels, ReAct agents
-2. **OpenInterpreterIntegration** - BashTool, EditTool, JavaScriptTool, PythonTool
-3. **AutoGPTIntegration** - Block/BlockType, AgentGraph, Think→Plan→Act→Observe loop
+### 1. المكاملات الثلاثة
+- ✅ **LangGraph**: StateGraph, ReAct agents, Mermaid visualization
+- ✅ **Open Interpreter**: Bash, Edit, JavaScript, Python tools
+- ✅ **AutoGPT**: Block-based, Think→Plan→Act→Observe
 
-### المحركات:
-- OllamaIntegration (local fallback)
-- LlamaIntegration (llama-2-7b.gguf)
-- MistralIntegration (mistral-7b-v0.1.gguf)
-- QwenIntegration (qwen-7b.gguf)
+### 2. قاعدة البيانات
+- ✅ **SQLite** (مدمج - لا ترقية مطلوبة)
+- ✅ **جداول:**
+  - `tasks` - المهام والنتائج
+  - `agent_states` - حالة الوكلاء
+  - `browser_sessions` - جلسات المتصفح
+  - `model_metadata` - بيانات النماذج
+  - `execution_logs` - سجل التنفيذ
 
-### الـ API:
-- POST `/api/tasks/execute` - تنفيذ مهمة
-- GET `/api/agents/state` - الحالة الحالية
-- WS `/socket.io/` - real-time streaming
+### 3. نماذج AI
+- ✅ **Llama 2 7B** (3.8 GB) - HuggingFace
+- ✅ **Mistral 7B** (4.4 GB) - HuggingFace
+- ✅ **Qwen 7B** (4.3 GB) - HuggingFace
+- ✅ **تحميل تلقائي** عند الحاجة
 
-## الملفات الرئيسية
-- `server.ts` - Express + Socket.io
-- `agents/langgraphIntegration.js`
-- `agents/openInterpreterIntegration.js`
-- `agents/autogptIntegration.js`
-- `agents/integrationsManager.js`
-- `controllers/taskController.js`
+### 4. Browser Automation
+- ✅ Chromium/Playwright
+- ✅ Session tracking في قاعدة البيانات
+- ✅ Real-time streaming عبر WebSocket
 
-## متغيرات البيئة
+---
+
+## 🚀 النشر
+
+### Environment Variables (عند النشر)
 ```
-DEEPSEEK_API_KEY=xxx (API DeepSeek - اختياري)
-GEMINI_API_KEY=xxx (API Gemini - اختياري)
-GITHUB_TOKEN=xxx (GitHub PAT)
-PORT=5000 (محلي) / 10000 (Render) / 8080 (Railway)
-NODE_ENV=production (في السحابة)
-USE_LOCAL_MODELS=false (عدم تحميل نماذج محلية)
+NODE_ENV=production
+USE_LOCAL_MODELS=false  (true إذا أردت تحميل النماذج)
+GITHUB_TOKEN=your_token
+DEEPSEEK_API_KEY=optional
+PORT=8080 (Railway/Vercel)
+DB_PATH=/app/data/app.db (auto)
 ```
 
-## خطوات النشر على Railway
+### الخطوات
+1. **Railway Dashboard**: https://railway.app/dashboard
+   - New Project → GitHub repo
+   - melsofany/ai-browser-agent-node
+   - Deploy
 
-### 1. إنشء حساب Railway
+2. **أو Vercel**: `vercel`
+
+3. **أو Render**: https://dashboard.render.com
+
+---
+
+## 📁 البنية
+
+```
+database/
+├── schema.sql          # جداول قاعدة البيانات
+├── db.ts              # Class للـ Database
+└── init-models.ts     # تهيئة بيانات النماذج
+
+scripts/
+└── download-models.ts # تحميل نماذج من HuggingFace
+
+agents/
+├── langgraphIntegration.js
+├── openInterpreterIntegration.js
+├── autogptIntegration.js
+└── integrationsManager.js
+
+integrations/
+├── langgraph/         # ملفات LangGraph الفعلية
+├── open-interpreter/  # ملفات OI الفعلية
+└── autogpt/          # ملفات AutoGPT الفعلية
+
+server.ts             # Entry point
+```
+
+---
+
+## 🔧 Scripts
+
 ```bash
-railway login
+npm start              # تشغيل الخادم
+npm run dev           # تطوير محلي
+npm run build         # بناء الواجهة الأمامية
+npm run download-models  # تحميل نماذج AI
+npm run init-db       # تهيئة قاعدة البيانات
 ```
 
-### 2. ربط المشروع
-```bash
-railway link
-```
+---
 
-### 3. النشر
-```bash
-railway up
-```
+## 💾 البيانات
 
-### 4. الـ URL الحية
-```
-https://ai-browser-agent-node.railway.app (أو domain مخصص)
-```
+### SQLite
+- **المسار المحلي**: `data/app.db`
+- **على السحابة**: `/app/data/app.db`
+- **التهيئة**: تلقائية عند البدء
 
-## ملاحظات مهمة
-- النماذج المحلية معطلة على السحابة (استخدم API بدلاً منها)
-- Browser init الآن غير blocking (timeout = 30 ثانية)
-- Health check: `/health`
-- Render deprecated - استخدم Railway الآن
+### النماذج
+- **Download Script**: `scripts/download-models.ts`
+- **بشرط**: `USE_LOCAL_MODELS=true`
+- **المسار**: `models/{llama,mistral,qwen}/`
+
+---
+
+## 🔗 الروابط
+
+- **Repository**: https://github.com/melsofany/ai-browser-agent-node
+- **Railway Token**: ba3ebfcd-1392-4c11-98d0-381afef2f8e2
+- **محلي**: http://0.0.0.0:5000
+
+---
+
+## ✨ الميزات
+
+- ✅ LangGraph مع StateGraph و ReAct
+- ✅ Open Interpreter مع 4 tools
+- ✅ AutoGPT مع Block system
+- ✅ Browser automation
+- ✅ قاعدة بيانات SQL كاملة
+- ✅ نماذج AI متعددة
+- ✅ WebSocket real-time streaming
+- ✅ بدون ترقية خطة مطلوبة

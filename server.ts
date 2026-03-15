@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import initializeRoutes from './api/routes';
 import TaskController from './controllers/taskController';
 import config from './config/config';
+import { database } from './database/db';
 const IntegrationsManager = require('./agents/integrationsManager');
 
 async function startServer() {

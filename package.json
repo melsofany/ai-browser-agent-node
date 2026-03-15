@@ -9,7 +9,9 @@
     "dev": "tsx server.ts",
     "build": "vite build",
     "lint": "tsc --noEmit",
-    "push": "tsx push_to_github.ts"
+    "push": "tsx push_to_github.ts",
+    "download-models": "tsx scripts/download-models.ts",
+    "init-db": "tsx database/db.ts"
   },
   "keywords": [],
   "author": "",
