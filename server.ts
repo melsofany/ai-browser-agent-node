@@ -10,10 +10,11 @@ const IntegrationsManager = require('./agents/integrationsManager');
 
 async function startServer() {
   // Initialize Integrations Manager
+  // Priority: DeepSeek (cloud) → Ollama (local) → fallback
   const integrationsManager = new IntegrationsManager({
-    activeProvider: 'llama',
-    fallbackProviders: ['mistral', 'qwen'],
-    llama: { modelName: 'llama-2-7b' },
+    activeProvider: process.env.DEEPSEEK_API_KEY ? 'deepseek' : 'ollama',
+    fallbackProviders: ['ollama', 'mistral', 'qwen'],
+    llama: { modelName: process.env.OLLAMA_MODEL || 'llama2' },
     mistral: { apiKey: process.env.MISTRAL_API_KEY },
     qwen: { apiKey: process.env.QWEN_API_KEY },
     openInterpreter: { apiKey: process.env.OPENAI_API_KEY },
@@ -23,9 +24,10 @@ async function startServer() {
 
   try {
     await integrationsManager.initialize();
-    console.log('[Server] Integrations Manager initialized successfully');
+    console.log(`[Server] Integrations Manager initialized (active: ${integrationsManager.activeProvider})`);
   } catch (error) {
-    console.error('[Server] Failed to initialize Integrations Manager:', error);
+    console.warn('[Server] Integrations Manager init warning:', error.message);
+    // Continue even if integrations fail - app should work with graceful degradation
   }
 
   const app = express();
