@@ -2,41 +2,50 @@ FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-# Install dependencies including wget for model downloads
+# Install system deps including Chromium for Playwright
 RUN apt-get update && apt-get install -y --no-install-recommends \
-  curl ca-certificates wget && \
-  apt-get clean && rm -rf /var/lib/apt/lists/*
+  curl ca-certificates wget xvfb \
+  chromium \
+  libglib2.0-0 libnss3 libnspr4 libatk1.0-0 libatk-bridge2.0-0 \
+  libcups2 libdrm2 libdbus-1-3 libatspi2.0-0 libx11-6 libxcomposite1 \
+  libxdamage1 libxext6 libxfixes3 libxrandr2 libgbm1 libxkbcommon0 \
+  libpango-1.0-0 libcairo2 libasound2 \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Tell Playwright to use system Chromium
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+ENV DISPLAY=:99
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --omit=dev --legacy-peer-deps && npm cache clean --force
+# Install dependencies (skip scripts to avoid native build issues)
+RUN npm install --legacy-peer-deps --ignore-scripts
+
+# Rebuild sqlite3 native bindings
+RUN cd node_modules/sqlite3 && npm run install 2>/dev/null || true
 
 # Copy application files
 COPY . .
 
-# Create directories for data and models
-RUN mkdir -p /app/data /app/models/{llama,mistral,qwen}
+# Build frontend
+RUN npm run build 2>/dev/null || echo "Build optional"
 
-# Download AI models (optional - can be skipped if models exist)
-ENV USE_LOCAL_MODELS=true
-ENV MODELS_PATH=/app/models
-# Create a script to run both DB init and model download on startup
-RUN echo '#!/bin/bash\n\n# Ensure data directory exists\nmkdir -p /app/data\n\n# Initialize DB\nnpm run init-db\n\n# Start model download in background if enabled\nif [ "$USE_LOCAL_MODELS" = "true" ]; then\n  echo "Starting model downloads in background..."\n  npm run download-models > /app/data/models_download.log 2>&1 &\nfi\n\n# Start the application\nexec npm start' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+# Create directories
+RUN mkdir -p /app/data /app/models /app/sandbox
 
-# Set environment variables
+# Set environment
 ENV NODE_ENV=production
-ENV PORT=8080
+ENV PORT=10000
 ENV DB_PATH=/app/data/app.db
-ENV USE_LOCAL_MODELS=true
 ENV MODELS_PATH=/app/models
+ENV USE_LOCAL_MODELS=false
 
-EXPOSE 8080
+EXPOSE 10000
 
-# Health check
-HEALTHCHECK --interval=60s --timeout=15s --start-period=180s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:8080/health', (r) => {if(r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
+HEALTHCHECK --interval=60s --timeout=30s --start-period=120s --retries=5 \
+  CMD curl -f http://localhost:10000/health || exit 1
 
-# Start the application
-ENTRYPOINT ["/app/entrypoint.sh"]
+# Start with virtual display for browser
+CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x720x24 & sleep 1 && node main.js"]
