@@ -835,6 +835,84 @@ class BrowserAgent {
   }
 
   /**
+   * Smart select option for <select> elements.
+   * Tries multiple strategies: value, label, partial text, number index, month name mapping.
+   */
+  async _smartSelectOption(page, selector, val, fieldKey = '') {
+    const MONTHS_AR = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+    const MONTHS_EN = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    const MONTHS_SHORT = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+
+    // Attempt Playwright helper with multiple strategies
+    const tryPW = async (strategy) => {
+      try { await page.selectOption(selector, strategy); return true; } catch { return false; }
+    };
+
+    if (await tryPW({ value: val }))           return true;
+    if (await tryPW({ label: val }))           return true;
+    if (await tryPW({ label: new RegExp(val.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') })) return true;
+    if (!isNaN(val) && await tryPW({ index: parseInt(val) - 1 }))                             return true;
+
+    // Month name → number mapping and vice versa
+    const key = fieldKey.toLowerCase();
+    if (key.includes('month')) {
+      const numVal = parseInt(val);
+      // val is a number (1-12) — try month label forms
+      if (!isNaN(numVal) && numVal >= 1 && numVal <= 12) {
+        const idx = numVal - 1;
+        if (await tryPW({ label: MONTHS_AR[idx] }))              return true;
+        if (await tryPW({ label: MONTHS_EN[idx] }))              return true;
+        if (await tryPW({ label: MONTHS_EN[idx].charAt(0).toUpperCase() + MONTHS_EN[idx].slice(1) })) return true;
+        if (await tryPW({ label: MONTHS_SHORT[idx] }))           return true;
+        if (await tryPW({ index: idx }))                         return true;
+      }
+      // val is a month name — try numeric
+      const arIdx = MONTHS_AR.findIndex(m => m === val);
+      const enIdx = MONTHS_EN.findIndex(m => m === val.toLowerCase());
+      const shIdx = MONTHS_SHORT.findIndex(m => m === val.toLowerCase().slice(0,3));
+      const resolvedIdx = arIdx >= 0 ? arIdx : enIdx >= 0 ? enIdx : shIdx >= 0 ? shIdx : -1;
+      if (resolvedIdx >= 0) {
+        if (await tryPW({ index: resolvedIdx }))                 return true;
+        if (await tryPW({ value: String(resolvedIdx + 1) }))     return true;
+      }
+    }
+
+    // Final fallback: JavaScript fuzzy select
+    const result = await page.evaluate(({ sel, val }) => {
+      const el = document.querySelector(sel);
+      if (!el || el.tagName !== 'SELECT') return false;
+      const v = val.toLowerCase().trim();
+      const opts = Array.from(el.options);
+
+      // 1. exact value
+      let best = opts.find(o => o.value.toLowerCase() === v);
+      // 2. exact text
+      if (!best) best = opts.find(o => o.text.toLowerCase().trim() === v);
+      // 3. value contains val
+      if (!best) best = opts.find(o => o.value.toLowerCase().includes(v));
+      // 4. text contains val
+      if (!best) best = opts.find(o => o.text.toLowerCase().includes(v));
+      // 5. val contains option text (good for short words like "Jan")
+      if (!best) best = opts.find(o => o.text.trim().length > 1 && v.includes(o.text.toLowerCase().trim()));
+      // 6. numeric: if val is a number match option index or numeric value
+      const num = parseInt(v);
+      if (!best && !isNaN(num) && num >= 1 && num <= opts.length) {
+        best = opts.find(o => parseInt(o.value) === num) || opts[num - 1];
+      }
+
+      if (best) {
+        el.value = best.value;
+        el.dispatchEvent(new Event('input',  { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      }
+      return false;
+    }, { sel: selector, val }).catch(() => false);
+
+    return result;
+  }
+
+  /**
    * Self-learning form filler:
    * 1. Discovers all real fields on the page
    * 2. Scores each field against the semantic key
@@ -869,9 +947,7 @@ class BrowserAgent {
 
         if (el && await el.isVisible().catch(() => false)) {
           if (best.field.tag === 'select') {
-            await page.selectOption(best.field.selector, { value: val }).catch(() =>
-              page.selectOption(best.field.selector, { label: val })
-            );
+            await this._smartSelectOption(page, best.field.selector, val, fieldKey);
           } else {
             await el.click({ timeout: 3000 }).catch(() => {});
             await el.fill('').catch(() => {});
