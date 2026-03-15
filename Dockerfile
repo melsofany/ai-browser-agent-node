@@ -23,7 +23,7 @@ RUN mkdir -p /app/data /app/models/{llama,mistral,qwen}
 ENV USE_LOCAL_MODELS=true
 ENV MODELS_PATH=/app/models
 # Create a script to run both DB init and model download on startup
-RUN echo '#!/bin/bash\nnpm run init-db\nnpm run download-models &\nexec npm start' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+RUN echo '#!/bin/bash\n\n# Ensure data directory exists\nmkdir -p /app/data\n\n# Initialize DB\nnpm run init-db\n\n# Start model download in background if enabled\nif [ "$USE_LOCAL_MODELS" = "true" ]; then\n  echo "Starting model downloads in background..."\n  npm run download-models > /app/data/models_download.log 2>&1 &\nfi\n\n# Start the application\nexec npm start' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Set environment variables
 ENV NODE_ENV=production
