@@ -701,109 +701,236 @@ class BrowserAgent {
   }
 
   /**
-   * Smart field finder - tries multiple selector strategies for a semantic field name
+   * Self-discovery: scans all visible inputs/selects/textareas on the page
+   * and returns their attributes so we can match semantically without hardcoding.
    */
-  async _smartFillField(page, fieldKey, value) {
-    const key = fieldKey.toLowerCase().replace(/[\s_\-]/g, '');
-    const val = String(value);
+  async _discoverPageFields(page) {
+    return page.evaluate(() => {
+      const fields = [];
+      const inputs = document.querySelectorAll('input, select, textarea');
 
-    // Field-specific selector priority lists
-    const FIELD_SELECTORS = {
-      first_name:     ['input[name="firstname"]','input[name="firstName"]','input[name="first_name"]','input[autocomplete="given-name"]','input[placeholder*="First" i]','input[aria-label*="First" i]','input[placeholder*="الاسم الأول" i]'],
-      last_name:      ['input[name="lastname"]','input[name="lastName"]','input[name="last_name"]','input[name="surname"]','input[autocomplete="family-name"]','input[placeholder*="Last" i]','input[aria-label*="Last" i]','input[placeholder*="اسم العائلة" i]'],
-      email:          ['input[type="email"]','input[name="email"]','input[name="emailAddress"]','input[autocomplete="email"]','input[placeholder*="email" i]','input[aria-label*="email" i]'],
-      password:       ['input[type="password"]','input[name="password"]','input[name="pass"]','input[autocomplete="new-password"]','input[autocomplete="current-password"]'],
-      confirm_password:['input[name="password_confirm"]','input[name="confirmPassword"]','input[name="repassword"]','input[autocomplete="new-password"]:nth-of-type(2)'],
-      username:       ['input[name="username"]','input[name="login"]','input[autocomplete="username"]','input[placeholder*="username" i]'],
-      phone:          ['input[type="tel"]','input[name*="phone" i]','input[name*="mobile" i]','input[autocomplete="tel"]','input[placeholder*="phone" i]','input[placeholder*="هاتف" i]'],
-      birthday_month: ['select[name*="month" i]','select[id*="month" i]','#month','select[aria-label*="month" i]'],
-      birthday_day:   ['select[name*="day" i]','select[id*="day" i]','#day','select[aria-label*="day" i]'],
-      birthday_year:  ['select[name*="year" i]','select[id*="year" i]','#year','select[aria-label*="year" i]'],
-      gender:         ['input[name="sex"]','input[name="gender"]','select[name="sex"]','select[name="gender"]'],
-      name:           ['input[name="name"]','input[autocomplete="name"]','input[placeholder*="name" i]','input[placeholder*="الاسم" i]'],
+      inputs.forEach((el, idx) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) return; // hidden
+        if (el.type === 'hidden' || el.type === 'submit' || el.type === 'button') return;
+
+        // Find associated label text
+        let labelText = '';
+        if (el.id) {
+          const label = document.querySelector(`label[for="${el.id}"]`);
+          if (label) labelText = label.textContent.trim();
+        }
+        if (!labelText) {
+          const parent = el.closest('label');
+          if (parent) labelText = parent.textContent.replace(el.value, '').trim();
+        }
+        if (!labelText) {
+          // Look for adjacent label/span/div above or before
+          let sibling = el.previousElementSibling;
+          for (let i = 0; i < 3 && sibling; i++) {
+            const t = sibling.textContent.trim();
+            if (t.length < 60 && t.length > 1) { labelText = t; break; }
+            sibling = sibling.previousElementSibling;
+          }
+        }
+
+        // Collect all hint text into one string for scoring
+        const hints = [
+          el.name || '',
+          el.id || '',
+          el.placeholder || '',
+          el.getAttribute('aria-label') || '',
+          el.getAttribute('aria-placeholder') || '',
+          el.getAttribute('autocomplete') || '',
+          el.getAttribute('data-testid') || '',
+          labelText,
+        ].join(' ').toLowerCase();
+
+        fields.push({
+          index: idx,
+          tag: el.tagName.toLowerCase(),
+          type: el.type || '',
+          name: el.name || '',
+          id: el.id || '',
+          placeholder: el.placeholder || '',
+          ariaLabel: el.getAttribute('aria-label') || '',
+          autocomplete: el.getAttribute('autocomplete') || '',
+          labelText,
+          hints,
+          agentId: el.getAttribute('data-agent-id') || null,
+          selector: el.id
+            ? `#${CSS.escape(el.id)}`
+            : el.name
+              ? `${el.tagName.toLowerCase()}[name="${el.name}"]`
+              : `[data-agent-id="${el.getAttribute('data-agent-id')}"]`,
+        });
+      });
+
+      return fields;
+    });
+  }
+
+  /**
+   * Score how well a semantic field name matches a discovered element.
+   * Pure keyword scoring — no hardcoded field lists.
+   */
+  _scoreFieldMatch(fieldKey, field) {
+    let score = 0;
+    const needle = fieldKey.toLowerCase().replace(/[_\s\-]/g, '');
+    const hints = field.hints;
+
+    // Semantic keyword maps covering many languages
+    const SEMANTICS = {
+      first:    ['first','given','fname','prénom','vorname','الاسم','given'],
+      last:     ['last','family','surname','lname','nom','nachname','العائلة','second'],
+      name:     ['name','nom','nombre','اسم'],
+      email:    ['email','mail','e-mail','البريد','correo'],
+      password: ['password','passwd','pass','كلمة','mot de passe','contraseña','pw'],
+      confirm:  ['confirm','repeat','retype','verify','again'],
+      phone:    ['phone','mobile','tel','cel','هاتف','téléphone','celular'],
+      birthday: ['birth','born','dob','bday','ميلاد','naissance','geburt'],
+      month:    ['month','mois','monat','شهر'],
+      day:      ['day','jour','tag','يوم'],
+      year:     ['year','année','jahr','سنة','año'],
+      gender:   ['gender','sex','جنس','sexe'],
+      username: ['username','login','user','handle'],
+      address:  ['address','street','addr','عنوان','adresse'],
+      city:     ['city','ville','stadt','مدينة'],
+      zip:      ['zip','postal','postcode','code'],
+      country:  ['country','pays','land','بلد'],
     };
 
-    // Build candidate list: field-specific first, then generic by key
-    const candidates = [
-      ...(FIELD_SELECTORS[fieldKey] || []),
-      `input[name="${fieldKey}"]`,
-      `input[name="${key}"]`,
-      `textarea[name="${fieldKey}"]`,
-      `input[id="${fieldKey}"]`,
-      `input[id="${key}"]`,
-      `input[placeholder*="${fieldKey}" i]`,
-      `[data-agent-id="${fieldKey}"]`,
-    ];
+    // Break fieldKey into semantic atoms
+    const atoms = fieldKey.toLowerCase().split(/[_\s\-]+/);
 
-    for (const sel of candidates) {
-      try {
-        const el = await page.$(sel);
-        if (!el) continue;
-        const visible = await el.isVisible().catch(() => false);
-        if (!visible) continue;
+    // Score: exact word match in any hint attribute
+    for (const atom of atoms) {
+      const atomNorm = atom.replace(/[_\s\-]/g, '');
+      if (hints.includes(atomNorm)) score += 30;
+      else if (hints.includes(atom)) score += 25;
 
-        const tag = await el.evaluate(e => e.tagName.toLowerCase());
-        if (tag === 'select') {
-          // Try by value, then by label
-          const selected = await page.selectOption(sel, { value: val }).catch(() => null)
-            || await page.selectOption(sel, { label: val }).catch(() => null);
-          if (selected) {
-            console.log(`[BrowserAgent] Selected "${fieldKey}" = "${val}" via ${sel}`);
-            return true;
-          }
-        } else {
-          await el.click({ timeout: 3000 }).catch(() => {});
-          await el.fill('').catch(() => {});
-          await el.fill(val, { timeout: 5000 });
-          console.log(`[BrowserAgent] Filled "${fieldKey}" = "${val}" via ${sel}`);
-          return true;
+      // Synonym match
+      for (const [concept, keywords] of Object.entries(SEMANTICS)) {
+        if (keywords.some(k => atom.includes(k) || k.includes(atom))) {
+          if (keywords.some(k => hints.includes(k))) score += 20;
         }
-      } catch (_) {
-        // try next selector
       }
     }
 
-    // Last-resort: find by associated <label> text
-    try {
-      const LABELS = {
-        first_name: ['first name','given name','الاسم الأول','prénom'],
-        last_name:  ['last name','surname','family name','اسم العائلة','nom'],
-        email:      ['email','e-mail','البريد الإلكتروني'],
-        password:   ['password','كلمة المرور','mot de passe'],
-        phone:      ['phone','mobile','telephone','هاتف'],
-      };
-      const labelTexts = LABELS[fieldKey] || [fieldKey.replace(/_/g, ' ')];
+    // Bonus: type matches expected type
+    if (atoms.includes('email') && field.type === 'email') score += 25;
+    if ((atoms.includes('password') || atoms.includes('pass')) && field.type === 'password') score += 40;
+    if (atoms.includes('phone') && field.type === 'tel') score += 25;
+    if ((atoms.includes('month') || atoms.includes('day') || atoms.includes('year')) && field.tag === 'select') score += 20;
+    if (atoms.includes('gender') && field.tag === 'select') score += 15;
 
-      const filled = await page.evaluate(({ texts, val }) => {
-        const labels = Array.from(document.querySelectorAll('label'));
-        for (const text of texts) {
-          const label = labels.find(l => l.textContent.toLowerCase().includes(text.toLowerCase()));
-          if (label) {
-            const input = label.control || document.getElementById(label.htmlFor);
-            if (input && (input.tagName === 'INPUT' || input.tagName === 'TEXTAREA')) {
-              input.focus();
-              input.value = val;
-              input.dispatchEvent(new Event('input', { bubbles: true }));
-              input.dispatchEvent(new Event('change', { bubbles: true }));
-              return true;
-            }
+    // Full needle match anywhere in hints
+    if (hints.includes(needle)) score += 35;
+
+    // autocomplete is highly reliable
+    const ac = field.autocomplete.replace('-', '');
+    if (ac === needle) score += 50;
+
+    return score;
+  }
+
+  /**
+   * Self-learning form filler:
+   * 1. Discovers all real fields on the page
+   * 2. Scores each field against the semantic key
+   * 3. Fills the best match — no site-specific hardcoding needed
+   */
+  async _smartFillField(page, fieldKey, value) {
+    const val = String(value);
+
+    // Step 1: discover real fields on this page
+    const fields = await this._discoverPageFields(page).catch(() => []);
+    console.log(`[BrowserAgent] Discovered ${fields.length} fields on page`);
+
+    // Step 2: score each field
+    const scored = fields
+      .map(f => ({ field: f, score: this._scoreFieldMatch(fieldKey, f) }))
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    if (scored.length > 0) {
+      const best = scored[0];
+      console.log(`[BrowserAgent] Best match for "${fieldKey}": selector="${best.field.selector}" score=${best.score}`);
+
+      try {
+        // Re-find element in live page using its selector
+        const el = best.field.agentId
+          ? await page.$(`[data-agent-id="${best.field.agentId}"]`)
+          : best.field.id
+            ? await page.$(`#${CSS.escape(best.field.id)}`)
+            : best.field.name
+              ? await page.$(`${best.field.tag}[name="${best.field.name}"]`)
+              : null;
+
+        if (el && await el.isVisible().catch(() => false)) {
+          if (best.field.tag === 'select') {
+            await page.selectOption(best.field.selector, { value: val }).catch(() =>
+              page.selectOption(best.field.selector, { label: val })
+            );
+          } else {
+            await el.click({ timeout: 3000 }).catch(() => {});
+            await el.fill('').catch(() => {});
+            await el.fill(val, { timeout: 5000 });
+            // Trigger React/Vue/Angular change events
+            await el.evaluate((el, v) => {
+              const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+              if (setter) setter.call(el, v);
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            }, val);
+          }
+          console.log(`[BrowserAgent] ✓ Filled "${fieldKey}" = "${val}" (score=${best.score})`);
+          return true;
+        }
+      } catch (err) {
+        console.warn(`[BrowserAgent] Fill attempt failed for "${fieldKey}":`, err.message);
+      }
+    }
+
+    // Step 3: fallback — inject value via JS using any matching discovered element
+    const fallback = await page.evaluate(({ fieldKey, val }) => {
+      const needle = fieldKey.toLowerCase().replace(/[_\s\-]/g, '');
+      const inputs = Array.from(document.querySelectorAll('input:not([type=hidden]):not([type=submit]):not([type=button]), select, textarea'));
+      
+      for (const el of inputs) {
+        const hints = [el.name, el.id, el.placeholder, el.getAttribute('aria-label'), el.getAttribute('autocomplete'), el.getAttribute('type')]
+          .filter(Boolean).join(' ').toLowerCase().replace(/[_\s\-]/g, '');
+        
+        if (hints.includes(needle) || needle.includes(hints.substring(0, 4))) {
+          if (el.tagName === 'SELECT') {
+            const opt = Array.from(el.options).find(o =>
+              o.value.toLowerCase().includes(val.toLowerCase()) ||
+              o.text.toLowerCase().includes(val.toLowerCase())
+            );
+            if (opt) { el.value = opt.value; el.dispatchEvent(new Event('change', { bubbles: true })); return true; }
+          } else {
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (setter) setter.call(el, val);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
           }
         }
-        return false;
-      }, { texts: labelTexts, val });
-
-      if (filled) {
-        console.log(`[BrowserAgent] Filled "${fieldKey}" via label text search`);
-        return true;
       }
-    } catch (_) {}
+      return false;
+    }, { fieldKey, val });
 
-    console.warn(`[BrowserAgent] Could not find field: "${fieldKey}"`);
+    if (fallback) {
+      console.log(`[BrowserAgent] ✓ JS-injected "${fieldKey}" = "${val}"`);
+      return true;
+    }
+
+    console.warn(`[BrowserAgent] ✗ Could not fill field: "${fieldKey}"`);
     return false;
   }
 
   /**
-   * Fill multiple form fields at once using smart field detection
+   * Fill multiple form fields — uses self-discovery engine
    */
   async fillForm(data, pageId = 'default') {
     console.log(`[BrowserAgent] Filling form with ${Object.keys(data).length} fields`);
@@ -815,7 +942,7 @@ class BrowserAgent {
       for (const [fieldKey, value] of Object.entries(data)) {
         const ok = await this._smartFillField(page, fieldKey, value);
         if (!ok) failed.push(fieldKey);
-        await page.waitForTimeout(200).catch(() => {});
+        await page.waitForTimeout(300).catch(() => {});
       }
 
       if (failed.length > 0 && failed.length === Object.keys(data).length) {
