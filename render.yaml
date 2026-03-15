@@ -2,20 +2,26 @@ services:
   - type: web
     name: ai-browser-agent-node
     env: docker
-    plan: free
+    plan: starter
     dockerfilePath: ./Dockerfile
     numInstances: 1
+    disk:
+      name: models-storage
+      mountPath: /app/models
+      sizeGB: 50
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 8080
       - key: USE_LOCAL_MODELS
-        value: "false"
+        value: "true"
       - key: DB_PATH
         value: /app/data/app.db
+      - key: MODELS_PATH
+        value: /app/models
     healthCheckPath: /health
     healthCheckInterval: 60
-    healthCheckTimeout: 10
-    healthCheckStartPeriod: 120
-    healthCheckRetries: 2
+    healthCheckTimeout: 15
+    healthCheckStartPeriod: 180
+    healthCheckRetries: 3

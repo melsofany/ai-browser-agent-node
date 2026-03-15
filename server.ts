@@ -13,11 +13,23 @@ async function startServer() {
   // Initialize Integrations Manager
   // Priority: DeepSeek (cloud) → Ollama (local) → fallback
   const integrationsManager = new IntegrationsManager({
-    activeProvider: process.env.DEEPSEEK_API_KEY ? 'deepseek' : 'ollama',
-    fallbackProviders: ['ollama', 'mistral', 'qwen'],
-    llama: { modelName: process.env.OLLAMA_MODEL || 'llama2' },
-    mistral: { apiKey: process.env.MISTRAL_API_KEY },
-    qwen: { apiKey: process.env.QWEN_API_KEY },
+    activeProvider: process.env.USE_LOCAL_MODELS === 'true' ? 'llama' : 
+                   process.env.DEEPSEEK_API_KEY ? 'deepseek' : 'ollama',
+    fallbackProviders: process.env.USE_LOCAL_MODELS === 'true' 
+      ? ['llama', 'mistral', 'qwen', 'ollama']
+      : ['ollama', 'mistral', 'qwen'],
+    llama: { 
+      modelName: process.env.OLLAMA_MODEL || 'llama2',
+      modelsPath: process.env.MODELS_PATH || './models'
+    },
+    mistral: { 
+      apiKey: process.env.MISTRAL_API_KEY,
+      modelsPath: process.env.MODELS_PATH || './models'
+    },
+    qwen: { 
+      apiKey: process.env.QWEN_API_KEY,
+      modelsPath: process.env.MODELS_PATH || './models'
+    },
     openInterpreter: { apiKey: process.env.OPENAI_API_KEY },
     autogpt: { apiKey: process.env.OPENAI_API_KEY },
     langgraph: { apiKey: process.env.OPENAI_API_KEY }

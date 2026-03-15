@@ -76,6 +76,7 @@ function downloadFile(url: string, dest: string): Promise<void> {
 
 async function downloadModels() {
   console.log('[Models] Starting model download process...');
+  console.log(`[Models] Models path: ${process.env.MODELS_PATH || './models'}`);
 
   if (process.env.USE_LOCAL_MODELS !== 'true') {
     console.log('[Models] USE_LOCAL_MODELS is not enabled. Skipping downloads.');
