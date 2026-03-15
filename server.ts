@@ -77,6 +77,10 @@ async function startServer() {
   const routes = initializeRoutes(taskController, io);
   app.use('/api', routes);
 
+  // Health check
+  app.get('/health', (req, res) => res.json({ status: 'ok' }));
+  app.get('/', (req, res) => res.json({ message: 'AI Agent Platform running' }));
+
   // Integrations Health Check Route
   app.get('/api/integrations/health', async (req, res) => {
     try {
@@ -175,19 +179,56 @@ async function startServer() {
     });
   }
 
-  const PORT = Number(config.port) || 3000;
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n========================================`);
-    console.log(`AI Agent Platform Started`);
-    console.log(`========================================`);
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log(`========================================\n`);
-  });
+  const PORT = parseInt(process.env.PORT || '5000', 10);
+  
+  const listenWithRetry = (port: number, maxRetries: number = 3) => {
+    return new Promise<void>((resolve, reject) => {
+      server.listen(port, '0.0.0.0', () => {
+        console.log(`\n========================================`);
+        console.log(`AI Agent Platform Started`);
+        console.log(`========================================`);
+        console.log(`Server running on http://0.0.0.0:${port}`);
+        console.log(`========================================\n`);
+        resolve();
+      }).on('error', (err: any) => {
+        if (err.code === 'EADDRINUSE' && maxRetries > 0) {
+          console.warn(`[Server] Port ${port} in use, trying ${port + 1}...`);
+          server.close();
+          listenWithRetry(port + 1, maxRetries - 1).then(resolve).catch(reject);
+        } else {
+          reject(err);
+        }
+      });
+    });
+  };
+
+  try {
+    await listenWithRetry(PORT);
+  } catch (err) {
+    console.error('[Server] Failed to bind port:', err);
+    process.exit(1);
+  }
 
   // Initialize browser in background to avoid blocking server startup
   taskController.initializeBrowser(io).catch(error => {
-    console.error('Failed to initialize browser:', error);
+    console.warn('Browser init delayed:', error.message);
   });
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    console.log('\n[Server] Shutting down gracefully...');
+    server.close(() => {
+      console.log('[Server] Server closed');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error('[Server] Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 startServer().catch(err => {
