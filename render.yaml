@@ -1,27 +1,27 @@
 services:
   - type: web
-    name: CortexFlow
+    name: ai-browser-agent
     env: docker
     plan: starter
     dockerfilePath: ./Dockerfile
     numInstances: 1
-    disk:
-      name: models-storage
-      mountPath: /app/models
-      sizeGB: 50
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 8080
+        value: 10000
       - key: USE_LOCAL_MODELS
-        value: "true"
+        value: "false"
       - key: DB_PATH
         value: /app/data/app.db
       - key: MODELS_PATH
         value: /app/models
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "1"
+      - key: PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+        value: /usr/bin/chromium
     healthCheckPath: /health
     healthCheckInterval: 60
-    healthCheckTimeout: 15
+    healthCheckTimeout: 30
     healthCheckStartPeriod: 180
-    healthCheckRetries: 3
+    healthCheckRetries: 5
