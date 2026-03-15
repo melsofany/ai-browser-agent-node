@@ -50,12 +50,12 @@ class BrowserAgent {
     console.log('[BrowserAgent] Initializing browser...');
     this.io = io;
 
-    // Start virtual desktop with VNC
+    // Start virtual desktop
     const desktopResult = await this.desktop.start();
     if (!desktopResult.success) {
-      console.warn('[BrowserAgent] Failed to start desktop, continuing without VNC:', desktopResult.error);
+      console.warn('[BrowserAgent] Failed to start desktop:', desktopResult.error);
     } else {
-      console.log(`[BrowserAgent] Desktop started: ${desktopResult.display} (VNC port ${desktopResult.vncPort})`);
+      console.log(`[BrowserAgent] Desktop started: ${desktopResult.display}`);
     }
 
     const launchArgs = [
@@ -70,39 +70,42 @@ class BrowserAgent {
     const envVars = { ...process.env };
     if (displayEnv) envVars.DISPLAY = displayEnv;
 
-    // First attempt: use default Playwright bundled browser
-    try {
-      this.browser = await chromium.launch({
-        headless: false,
-        args: launchArgs,
-        env: envVars
-      });
-      console.log('[BrowserAgent] Browser initialized successfully (Playwright bundled)');
-      return { success: true };
-    } catch (error) {
-      console.warn('[BrowserAgent] Bundled browser failed, trying system Chromium fallback...', error.message);
-    }
-
-    // Second attempt: use system Chromium (for NixOS/Replit environment)
+    // Try system Chromium first (more reliable on Replit/NixOS)
     const systemChromium = findSystemChromium();
     if (systemChromium) {
       try {
+        console.log(`[BrowserAgent] Launching system Chromium: ${systemChromium}`);
         const { chromium: playwrightChromium } = require('playwright');
         this.browser = await playwrightChromium.launch({
           executablePath: systemChromium,
           headless: false,
           args: launchArgs,
-          env: envVars
+          env: envVars,
+          timeout: 30000
         });
-        console.log(`[BrowserAgent] Browser initialized successfully (system: ${systemChromium})`);
+        console.log('[BrowserAgent] Browser initialized successfully (system Chromium)');
         return { success: true };
-      } catch (error2) {
-        console.error('[BrowserAgent] System Chromium also failed:', error2.message);
-        return { success: false, error: error2.message };
+      } catch (error) {
+        console.error('[BrowserAgent] System Chromium failed:', error.message);
       }
     }
 
-    return { success: false, error: 'No working Chromium binary found. Try setting PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH.' };
+    // Fallback: try bundled browser with more lenient args
+    try {
+      console.log('[BrowserAgent] Trying bundled Playwright browser...');
+      this.browser = await chromium.launch({
+        headless: false,
+        args: launchArgs,
+        env: envVars,
+        timeout: 30000
+      });
+      console.log('[BrowserAgent] Browser initialized (bundled Playwright)');
+      return { success: true };
+    } catch (error) {
+      console.error('[BrowserAgent] Bundled browser failed:', error.message);
+    }
+
+    return { success: false, error: 'No working Chromium binary found.' };
   }
 
   /**
