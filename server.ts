@@ -92,7 +92,7 @@ async function startServer() {
 
   // Health check
   app.get('/health', (req, res) => res.json({ status: 'ok' }));
-  app.get('/', (req, res) => res.json({ message: 'AI Agent Platform running' }));
+  app.get('/', (req, res) => res.json({ message: 'CortexFlow AI Agent running' }));
 
   // Integrations Health Check Route
   app.get('/api/integrations/health', async (req, res) => {
@@ -123,7 +123,7 @@ async function startServer() {
     });
 
     socket.emit('connected', {
-      message: 'Connected to AI Agent Platform',
+      message: 'Connected to CortexFlow AI Agent',
       timestamp: new Date(),
     });
 
@@ -198,7 +198,7 @@ async function startServer() {
     return new Promise<void>((resolve, reject) => {
       server.listen(port, '0.0.0.0', () => {
         console.log(`\n========================================`);
-        console.log(`AI Agent Platform Started`);
+        console.log(`CortexFlow AI Agent Started`);
         console.log(`========================================`);
         console.log(`Server running on http://0.0.0.0:${port}`);
         console.log(`========================================\n`);

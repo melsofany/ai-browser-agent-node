@@ -1,8 +1,10 @@
+# Use a smaller base image
 FROM node:22-bookworm-slim
 
 WORKDIR /app
 
-# Install system deps including Chromium for Playwright
+# Install only essential system deps including Chromium for Playwright
+# Clean up apt cache immediately to save space
 RUN apt-get update && apt-get install -y --no-install-recommends \
   curl ca-certificates wget xvfb \
   chromium \
@@ -17,22 +19,23 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
 ENV DISPLAY=:99
 
-# Copy package files
+# Copy package files first for better caching
 COPY package*.json ./
 
-# Install dependencies (skip scripts to avoid native build issues)
-RUN npm install --legacy-peer-deps --ignore-scripts
+# Install dependencies with production flag to skip devDependencies
+# Use --legacy-peer-deps to avoid conflicts and --ignore-scripts for speed
+RUN npm install --production --legacy-peer-deps --ignore-scripts
 
-# Rebuild sqlite3 native bindings
+# Rebuild sqlite3 native bindings if needed
 RUN cd node_modules/sqlite3 && npm run install 2>/dev/null || true
 
-# Copy application files
+# Copy application files (respecting .dockerignore)
 COPY . .
 
-# Build frontend
+# Build frontend (optional if pre-built)
 RUN npm run build 2>/dev/null || echo "Build optional"
 
-# Create directories
+# Create directories for persistent data
 RUN mkdir -p /app/data /app/models /app/sandbox
 
 # Set environment
@@ -44,8 +47,9 @@ ENV USE_LOCAL_MODELS=false
 
 EXPOSE 10000
 
+# Healthcheck to ensure service is alive
 HEALTHCHECK --interval=60s --timeout=30s --start-period=120s --retries=5 \
   CMD curl -f http://localhost:10000/health || exit 1
 
-# Start with virtual display for browser
+# Start with virtual display for browser and run the app
 CMD ["sh", "-c", "Xvfb :99 -screen 0 1280x720x24 & sleep 1 && node main.js"]

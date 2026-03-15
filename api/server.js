@@ -106,7 +106,7 @@ class Server {
 
       // Send initial status
       socket.emit('connected', {
-        message: 'Connected to AI Agent Platform',
+        message: 'Connected to CortexFlow AI Agent',
         timestamp: new Date(),
       });
 
@@ -208,7 +208,7 @@ class Server {
       // Start listening
       this.server.listen(config.port, () => {
         console.log(`\n========================================`);
-        console.log(`AI Agent Platform Started`);
+        console.log(`CortexFlow AI Agent Started`);
         console.log(`========================================`);
         console.log(`Server running on port ${config.port}`);
         console.log(`Environment: ${config.nodeEnv}`);

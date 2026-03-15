@@ -579,7 +579,7 @@ const App: React.FC = () => {
                   <Bot size={20} className="text-white"/>
                 </div>
                 <div>
-                  <h1 className="font-bold text-white text-base leading-none">Manus AI</h1>
+                  <h1 className="font-bold text-white text-base leading-none">CortexFlow</h1>
                   <p className="text-[11px] text-slate-500 mt-0.5">وكيل تصفح ذكي</p>
                 </div>
               </div>
@@ -634,7 +634,7 @@ const App: React.FC = () => {
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-600 to-violet-600 flex items-center justify-center">
               <Bot size={15} className="text-white"/>
             </div>
-            <span className="font-bold text-white text-sm">Manus AI</span>
+            <span className="font-bold text-white text-sm">CortexFlow</span>
             {isAgentBusy && currentStep && STEP_META[currentStep] && (
               <span className="flex items-center gap-1 px-2.5 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[11px] text-indigo-400 font-medium">
                 <Loader2 size={10} className="animate-spin"/>
