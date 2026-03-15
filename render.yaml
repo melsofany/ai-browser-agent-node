@@ -1,43 +1,21 @@
 services:
   - type: web
-    name: ai-browser-agent
-    runtime: node
-    plan: starter
-    buildCommand: npm install
-    startCommand: npm start
+    name: ai-browser-agent-node
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    numInstances: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 10000
-      - key: GITHUB_TOKEN
-        fromDatabase:
-          name: github_token
-      - key: DEEPSEEK_API_KEY
-        fromDatabase:
-          name: deepseek_api_key
-      - key: LOCAL_ONLY_MODE
-        value: "true"
-      - key: MODELS_PATH
-        value: "/app/models"
-      - key: RENDER_API_KEY
-        fromDatabase:
-          name: render_api_key
-      - key: LOG_LEVEL
-        value: info
-      - key: BROWSER_TIMEOUT
-        value: 30000
-      - key: MAX_CONCURRENT_TASKS
-        value: 5
-      - key: MEMORY_BACKEND
-        value: memory
+        value: 8080
+      - key: USE_LOCAL_MODELS
+        value: "false"
+      - key: DB_PATH
+        value: /app/data/app.db
     healthCheckPath: /health
-    healthCheckInterval: 30
+    healthCheckInterval: 60
     healthCheckTimeout: 10
-    healthCheckStartPeriod: 5
-    healthCheckRetries: 3
-    dockerfilePath: ./Dockerfile
-    disk:
-      name: models-storage
-      mountPath: /app/models
-      sizeGB: 50
+    healthCheckStartPeriod: 120
+    healthCheckRetries: 2
