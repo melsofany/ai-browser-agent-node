@@ -7,6 +7,7 @@
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 const { execSync } = require('child_process');
+const DesktopAgent = require('./desktopAgent');
 
 // Use stealth plugin to avoid detection
 chromium.use(stealth);
@@ -38,7 +39,8 @@ class BrowserAgent {
     this.browser = null;
     this.pages = new Map();
     this.browserTimeout = options.timeout || 30000;
-    this.headless = options.headless !== false;
+    this.headless = false; // Always non-headless for real desktop
+    this.desktop = new DesktopAgent();
   }
 
   /**
@@ -48,6 +50,14 @@ class BrowserAgent {
     console.log('[BrowserAgent] Initializing browser...');
     this.io = io;
 
+    // Start virtual desktop with VNC
+    const desktopResult = await this.desktop.start();
+    if (!desktopResult.success) {
+      console.warn('[BrowserAgent] Failed to start desktop, continuing without VNC:', desktopResult.error);
+    } else {
+      console.log(`[BrowserAgent] Desktop started: ${desktopResult.display} (VNC port ${desktopResult.vncPort})`);
+    }
+
     const launchArgs = [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -56,11 +66,16 @@ class BrowserAgent {
       '--disable-gpu',
     ];
 
+    const displayEnv = this.desktop.getDisplay() || process.env.DISPLAY;
+    const envVars = { ...process.env };
+    if (displayEnv) envVars.DISPLAY = displayEnv;
+
     // First attempt: use default Playwright bundled browser
     try {
       this.browser = await chromium.launch({
-        headless: this.headless,
+        headless: false,
         args: launchArgs,
+        env: envVars
       });
       console.log('[BrowserAgent] Browser initialized successfully (Playwright bundled)');
       return { success: true };
@@ -75,8 +90,9 @@ class BrowserAgent {
         const { chromium: playwrightChromium } = require('playwright');
         this.browser = await playwrightChromium.launch({
           executablePath: systemChromium,
-          headless: this.headless,
+          headless: false,
           args: launchArgs,
+          env: envVars
         });
         console.log(`[BrowserAgent] Browser initialized successfully (system: ${systemChromium})`);
         return { success: true };
@@ -123,6 +139,19 @@ class BrowserAgent {
   }
 
   /**
+   * Capture desktop screen (VNC or X11)
+   */
+  async _captureDesktop() {
+    try {
+      // Try desktop agent capture (VNC/X11)
+      return await this.desktop.captureScreen();
+    } catch (err) {
+      console.warn('[BrowserAgent] Desktop capture failed:', err.message);
+      return null;
+    }
+  }
+
+  /**
    * Start streaming screenshots for a page
    */
   async startStreaming(pageId = 'default') {
@@ -141,14 +170,19 @@ class BrowserAgent {
       if (!data || !data.streaming) return;
 
       try {
-        if (!page.isClosed()) {
-          const screenshot = await page.screenshot({ type: 'jpeg', quality: 60 });
-          if (this.io) {
-            this.io.emit('browserStream', {
-              pageId,
-              image: screenshot.toString('base64')
-            });
-          }
+        // Try desktop capture first (full screen, includes everything)
+        let screenshot = await this._captureDesktop();
+        
+        // Fallback to Playwright screenshot if desktop capture fails
+        if (!screenshot && !page.isClosed()) {
+          screenshot = await page.screenshot({ type: 'jpeg', quality: 60 });
+        }
+        
+        if (screenshot && this.io) {
+          this.io.emit('browserStream', {
+            pageId,
+            image: screenshot.toString('base64')
+          });
         }
       } catch (err) {
         // Ignore errors during streaming
