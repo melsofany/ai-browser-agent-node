@@ -1,0 +1,17 @@
+{
+  "build": {
+    "builder": "nixpacks"
+  },
+  "deploy": {
+    "numReplicas": 1,
+    "startCommand": "npm start",
+    "healthchecks": {
+      "cpu": {
+        "percentage": 80
+      },
+      "memory": {
+        "percentage": 80
+      }
+    }
+  }
+}

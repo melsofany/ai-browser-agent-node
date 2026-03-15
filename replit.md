@@ -1,78 +1,73 @@
 # AI Browser Agent Platform
 
-## Overview
-A full-stack autonomous AI agent platform with a React frontend and Express/Socket.io backend. The agent can browse the web, fill forms, research topics, and execute complex tasks. Supports both cloud AI (DeepSeek) and local AI (Ollama with Llama/Mistral/Qwen/DeepSeek-R1).
+**تاريخ التحديث:** 2026-03-15
 
-## Architecture
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
-- **Backend**: Express + Socket.io (real-time WebSocket communication)
-- **Both served from a single server** on port 5000 (Vite middleware in dev mode)
-- **Entry point**: `server.ts` (run via `tsx`)
+## الوضع الحالي
+- ✅ محلي: يعمل بنجاح على http://0.0.0.0:5000
+- ✅ Browser: Chromium جاهز والتصفح يعمل
+- ✅ Integrations: LangGraph, Open Interpreter, AutoGPT (كل واحد له engine خاص)
+- ⏳ النشر: جاري الانتقال من Render → Railway (أسرع + أقل timeout)
 
-## Project Structure
-- `server.ts` - Main server entry (Express + Vite middleware + Socket.io)
-- `src/` - React frontend (App.tsx, main.tsx, index.css)
-- `api/` - Express routes and server class
-- `agents/` - AI agent implementations:
-  - `reactLoop.js` - Core ReAct loop (Observe→Think→Plan→Act→Verify)
-  - `plannerAgent.js` - High-level goal → plan breakdown
-  - `browserAgent.js` - Playwright browser control
-  - `memorySystem.js` - SQLite + vector memory
-  - `toolRouter.js` - Tool routing (browser/terminal/filesystem/search/code)
-  - `ollamaIntegration.js` - Local AI via Ollama
-  - `integrationsManager.js` - Unified AI provider manager
-  - `thinkingAgent.js` - Thinking logs display
-  - `visionNavigator.js` - Visual element analysis
-- `config/config.js` - App configuration
-- `integrations/` - Full source copies + local model integrations:
-  - `langgraph/` - LangGraph source (StateGraph, channels, checkpointing)
-  - `open-interpreter/` - Open Interpreter source (tools, computer-use loop)
-  - `autogpt/` - AutoGPT classic + platform source
+## البنية الحالية
 
-## Integration Modules (agents/)
-- `langgraphIntegration.js` - StateGraph, RetryPolicy, Checkpointing, Streaming, ReAct agent builder
-- `openInterpreterIntegration.js` - ToolCollection, BashTool, EditTool, JS/Python tools, SamplingLoop
-- `autogptIntegration.js` - Block system, BlockType/Category, AgentGraph, AgentMemory, TaskManager, SelfImprovement
+### المكاملات:
+1. **LangGraphIntegration** - StateGraph, Channels, ReAct agents
+2. **OpenInterpreterIntegration** - BashTool, EditTool, JavaScriptTool, PythonTool
+3. **AutoGPTIntegration** - Block/BlockType, AgentGraph, Think→Plan→Act→Observe loop
 
-## Running the App
+### المحركات:
+- OllamaIntegration (local fallback)
+- LlamaIntegration (llama-2-7b.gguf)
+- MistralIntegration (mistral-7b-v0.1.gguf)
+- QwenIntegration (qwen-7b.gguf)
+
+### الـ API:
+- POST `/api/tasks/execute` - تنفيذ مهمة
+- GET `/api/agents/state` - الحالة الحالية
+- WS `/socket.io/` - real-time streaming
+
+## الملفات الرئيسية
+- `server.ts` - Express + Socket.io
+- `agents/langgraphIntegration.js`
+- `agents/openInterpreterIntegration.js`
+- `agents/autogptIntegration.js`
+- `agents/integrationsManager.js`
+- `controllers/taskController.js`
+
+## متغيرات البيئة
+```
+DEEPSEEK_API_KEY=xxx (API DeepSeek - اختياري)
+GEMINI_API_KEY=xxx (API Gemini - اختياري)
+GITHUB_TOKEN=xxx (GitHub PAT)
+PORT=5000 (محلي) / 10000 (Render) / 8080 (Railway)
+NODE_ENV=production (في السحابة)
+USE_LOCAL_MODELS=false (عدم تحميل نماذج محلية)
+```
+
+## خطوات النشر على Railway
+
+### 1. إنشء حساب Railway
 ```bash
-PORT=5000 npm run dev
+railway login
 ```
 
-## AI Model Priority
-1. **DeepSeek** (cloud) - if `DEEPSEEK_API_KEY` is set
-2. **Ollama** (local) - if Ollama is running at `OLLAMA_URL`
-3. **Rule-based fallback** - no AI required for basic tasks
-
-## Environment Variables
-```
-DEEPSEEK_API_KEY=     # Cloud AI (primary)
-OLLAMA_URL=http://localhost:11434  # Local AI server
-OLLAMA_MODEL=llama3   # Model to use (llama3, mistral, qwen2, deepseek-r1...)
-USE_LOCAL_MODELS=true
-MEMORY_BACKEND=sqlite  # 'memory' or 'sqlite'
-GITHUB_TOKEN=          # For GitHub push
+### 2. ربط المشروع
+```bash
+railway link
 ```
 
-## Key Technical Decisions
-- **Accessibility Tree only** (not full DOM) sent to AI → reduces tokens by ~90%
-- Tree limited to 3000 chars, interactive elements limited to 25 per request
-- `callAI()` helper in reactLoop + plannerAgent tries DeepSeek first, then Ollama
-- Memory: SQLite for persistence, keyword-based vector search fallback
+### 3. النشر
+```bash
+railway up
+```
 
-## Browser Agent
-Uses Playwright (Chromium) with stealth plugin. Two-layer initialization:
-1. Playwright bundled Chromium (primary)
-2. System Chromium fallback (for NixOS/Replit)
+### 4. الـ URL الحية
+```
+https://ai-browser-agent-node.railway.app (أو domain مخصص)
+```
 
-## Bug Fixes Applied
-- Fixed syntax error in `reactLoop.js` constructor (extra closing brace)
-- Removed full DOM/outerHTML from AI context (was causing 100k+ token issues)
-- Removed Gemini dependency entirely
-- Added Ollama integration for local model support
-- Unified AI call with DeepSeek→Ollama→fallback chain
-
-## Deployment
-Configured as `vm` deployment:
-- Build: `npm run build`
-- Run: `PORT=5000 NODE_ENV=production npm start`
+## ملاحظات مهمة
+- النماذج المحلية معطلة على السحابة (استخدم API بدلاً منها)
+- Browser init الآن غير blocking (timeout = 30 ثانية)
+- Health check: `/health`
+- Render deprecated - استخدم Railway الآن

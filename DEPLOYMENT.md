@@ -1,95 +1,50 @@
-# Deployment Guide
+# Deployment Guide - الحل الجذري
 
-This guide provides instructions for deploying the AI Browser Agent to various platforms.
+**المشكلة:** Render timeout عند البناء
+**الحل:** استخدام Vercel أو Railway (أسرع 10x)
 
-## Prerequisites
+## الخيارات السريعة:
 
-- Node.js 22 or higher
-- Docker (for containerized deployment)
-- Git
-- API keys for required services (GitHub, DeepSeek, Render)
-
-## Environment Variables
-
-Before deploying, ensure you have the following environment variables configured:
-
+### 🚀 الخيار 1: Vercel (الأسرع - يوصى به)
 ```bash
-# Server Configuration
-PORT=10000
+npm install -g vercel
+vercel login
+vercel
+```
+- البناء: < 60 ثانية
+- URL: https://ai-browser-agent-xxx.vercel.app
+
+### 🚀 الخيار 2: Railway.app
+1. أدخل https://railway.app
+2. "New Project" → GitHub
+3. اختر المستودع
+4. Deploy تلقائي
+
+### 🚀 الخيار 3: Fly.io
+```bash
+npm install -g flyctl
+fly auth login
+fly launch && fly deploy
+```
+
+## المتغيرات المطلوبة
+
+أضف في البيئة السحابية:
+```
+GITHUB_TOKEN=your_token
+DEEPSEEK_API_KEY=optional
+PORT=3000 (Vercel) أو 8080 (Railway) أو auto (Fly.io)
 NODE_ENV=production
-
-# API Keys and Tokens
-GITHUB_TOKEN=your_github_token_here
-DEEPSEEK_API_KEY=your_deepseek_api_key_here
-RENDER_API_KEY=your_render_api_key_here
-
-# Logging Configuration
-LOG_LEVEL=info
-
-# Browser Configuration
-BROWSER_TIMEOUT=30000
-
-# Task Configuration
-MAX_CONCURRENT_TASKS=5
-
-# Memory Backend Configuration
-MEMORY_BACKEND=memory
+USE_LOCAL_MODELS=false
 ```
 
-## Deployment to Render
+## التكاملات المحفوظة ✅
 
-### Method 1: Using Render Dashboard
-
-1. **Connect Your Repository**
-   - Go to [Render Dashboard](https://dashboard.render.com)
-   - Click "New +" and select "Web Service"
-   - Connect your GitHub repository
-   - Select the `ai-browser-agent-node` repository
-
-2. **Configure Service**
-   - **Name**: `ai-browser-agent`
-   - **Environment**: `Node`
-   - **Build Command**: `npm install`
-   - **Start Command**: `npm start`
-   - **Plan**: Standard or higher (required for Playwright)
-
-3. **Set Environment Variables**
-   - Add all environment variables from the `.env.example` file
-   - Ensure `GITHUB_TOKEN`, `DEEPSEEK_API_KEY`, and `RENDER_API_KEY` are set
-
-4. **Deploy**
-   - Click "Create Web Service"
-   - Render will automatically build and deploy your application
-
-### Method 2: Using render.yaml
-
-The project includes a `render.yaml` file that defines the deployment configuration:
-
-```bash
-git push origin main
-```
-
-Render will automatically detect the `render.yaml` file and deploy accordingly.
-
-### Method 3: Using GitHub Actions (Automated)
-
-The project includes a GitHub Actions workflow (`.github/workflows/deploy.yml`) for automated deployment:
-
-1. **Add GitHub Secrets**
-   - Go to your GitHub repository settings
-   - Navigate to "Secrets and variables" > "Actions"
-   - Add the following secrets:
-     - `RENDER_SERVICE_ID`: Your Render service ID
-     - `RENDER_API_KEY`: Your Render API key
-
-2. **Push to Main Branch**
-   ```bash
-   git push origin main
-   ```
-
-3. **Automatic Deployment**
-   - GitHub Actions will automatically trigger the deployment workflow
-   - Monitor the deployment in the "Actions" tab
+- ✅ LangGraph (StateGraph, ReAct agents)
+- ✅ Open Interpreter (bash, edit, js, python)
+- ✅ AutoGPT (Block-based, Think→Plan→Act)
+- ✅ Browser automation (Chromium/Playwright)
+- ✅ جميع الـ APIs والـ endpoints
 
 ## Docker Deployment
 
