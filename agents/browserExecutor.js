@@ -84,9 +84,25 @@ class BrowserExecutor {
       }
 
       if (elementId) {
+        // Try data-agent-id first (injected during observation), then text/role fallback
         const selector = `[data-agent-id="${elementId}"]`;
-        await page.click(selector);
-        return { success: true, message: `Clicked element with ID: ${elementId}` };
+        const el = await page.$(selector).catch(() => null);
+        if (el && await el.isVisible().catch(() => false)) {
+          await el.click({ timeout: 5000 });
+          return { success: true, message: `Clicked element ${elementId}` };
+        }
+        // Fallback: try to click by text content if elementId looks like text
+        if (typeof elementId === 'string' && isNaN(Number(elementId))) {
+          try {
+            await page.getByText(elementId, { exact: false }).first().click({ timeout: 5000 });
+            return { success: true, message: `Clicked by text: ${elementId}` };
+          } catch (_) {}
+          try {
+            await page.getByRole('button', { name: new RegExp(elementId, 'i') }).first().click({ timeout: 5000 });
+            return { success: true, message: `Clicked button: ${elementId}` };
+          } catch (_) {}
+        }
+        return { success: false, error: `Element not found: ${elementId}` };
       }
 
       if (x && y) {
@@ -124,8 +140,16 @@ class BrowserExecutor {
 
       if (elementId) {
         const selector = `[data-agent-id="${elementId}"]`;
-        await page.fill(selector, text);
-        return { success: true, message: `Typed into element ${elementId}: ${text}` };
+        const el = await page.$(selector).catch(() => null);
+        if (el && await el.isVisible().catch(() => false)) {
+          await el.fill(text, { timeout: 5000 });
+          return { success: true, message: `Typed into element ${elementId}: ${text}` };
+        }
+        // Fallback: use smart fill if elementId is a semantic field name
+        if (typeof elementId === 'string' && isNaN(Number(elementId))) {
+          const filled = await browser._smartFillField(page, elementId, text);
+          if (filled) return { success: true, message: `Smart-filled ${elementId}: ${text}` };
+        }
       }
 
       await page.keyboard.type(text);
@@ -207,8 +231,24 @@ class BrowserExecutor {
   async actionSelectOption(browser, params) {
     const { elementId, value } = params;
     if (!elementId || value === undefined) return { success: false, error: 'Missing elementId or value' };
+    
+    const page = browser.pages.get('default')?.page;
+    if (!page) return { success: false, error: 'Page not found' };
+
+    // Try data-agent-id first
     const selector = `[data-agent-id="${elementId}"]`;
-    return browser.selectOption(selector, value);
+    const el = await page.$(selector).catch(() => null);
+    if (el && await el.isVisible().catch(() => false)) {
+      return browser.selectOption(selector, value);
+    }
+
+    // Fallback: smart fill for semantic names (e.g., birthday_month)
+    if (typeof elementId === 'string' && isNaN(Number(elementId))) {
+      const ok = await browser._smartFillField(page, elementId, String(value));
+      if (ok) return { success: true };
+    }
+
+    return { success: false, error: `Select element not found: ${elementId}` };
   }
 
   /**
@@ -236,12 +276,8 @@ class BrowserExecutor {
   async actionFillForm(browser, params) {
     const { data } = params;
     if (!data) return { success: false, error: 'Missing form data' };
-    
-    const mappedData = {};
-    for (const [id, val] of Object.entries(data)) {
-      mappedData[`[data-agent-id="${id}"]`] = val;
-    }
-    return browser.fillForm(mappedData);
+    // Pass semantic field names directly; fillForm() uses smart detection
+    return browser.fillForm(data);
   }
 
   /**

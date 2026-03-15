@@ -701,7 +701,109 @@ class BrowserAgent {
   }
 
   /**
-   * Fill multiple form fields at once
+   * Smart field finder - tries multiple selector strategies for a semantic field name
+   */
+  async _smartFillField(page, fieldKey, value) {
+    const key = fieldKey.toLowerCase().replace(/[\s_\-]/g, '');
+    const val = String(value);
+
+    // Field-specific selector priority lists
+    const FIELD_SELECTORS = {
+      first_name:     ['input[name="firstname"]','input[name="firstName"]','input[name="first_name"]','input[autocomplete="given-name"]','input[placeholder*="First" i]','input[aria-label*="First" i]','input[placeholder*="الاسم الأول" i]'],
+      last_name:      ['input[name="lastname"]','input[name="lastName"]','input[name="last_name"]','input[name="surname"]','input[autocomplete="family-name"]','input[placeholder*="Last" i]','input[aria-label*="Last" i]','input[placeholder*="اسم العائلة" i]'],
+      email:          ['input[type="email"]','input[name="email"]','input[name="emailAddress"]','input[autocomplete="email"]','input[placeholder*="email" i]','input[aria-label*="email" i]'],
+      password:       ['input[type="password"]','input[name="password"]','input[name="pass"]','input[autocomplete="new-password"]','input[autocomplete="current-password"]'],
+      confirm_password:['input[name="password_confirm"]','input[name="confirmPassword"]','input[name="repassword"]','input[autocomplete="new-password"]:nth-of-type(2)'],
+      username:       ['input[name="username"]','input[name="login"]','input[autocomplete="username"]','input[placeholder*="username" i]'],
+      phone:          ['input[type="tel"]','input[name*="phone" i]','input[name*="mobile" i]','input[autocomplete="tel"]','input[placeholder*="phone" i]','input[placeholder*="هاتف" i]'],
+      birthday_month: ['select[name*="month" i]','select[id*="month" i]','#month','select[aria-label*="month" i]'],
+      birthday_day:   ['select[name*="day" i]','select[id*="day" i]','#day','select[aria-label*="day" i]'],
+      birthday_year:  ['select[name*="year" i]','select[id*="year" i]','#year','select[aria-label*="year" i]'],
+      gender:         ['input[name="sex"]','input[name="gender"]','select[name="sex"]','select[name="gender"]'],
+      name:           ['input[name="name"]','input[autocomplete="name"]','input[placeholder*="name" i]','input[placeholder*="الاسم" i]'],
+    };
+
+    // Build candidate list: field-specific first, then generic by key
+    const candidates = [
+      ...(FIELD_SELECTORS[fieldKey] || []),
+      `input[name="${fieldKey}"]`,
+      `input[name="${key}"]`,
+      `textarea[name="${fieldKey}"]`,
+      `input[id="${fieldKey}"]`,
+      `input[id="${key}"]`,
+      `input[placeholder*="${fieldKey}" i]`,
+      `[data-agent-id="${fieldKey}"]`,
+    ];
+
+    for (const sel of candidates) {
+      try {
+        const el = await page.$(sel);
+        if (!el) continue;
+        const visible = await el.isVisible().catch(() => false);
+        if (!visible) continue;
+
+        const tag = await el.evaluate(e => e.tagName.toLowerCase());
+        if (tag === 'select') {
+          // Try by value, then by label
+          const selected = await page.selectOption(sel, { value: val }).catch(() => null)
+            || await page.selectOption(sel, { label: val }).catch(() => null);
+          if (selected) {
+            console.log(`[BrowserAgent] Selected "${fieldKey}" = "${val}" via ${sel}`);
+            return true;
+          }
+        } else {
+          await el.click({ timeout: 3000 }).catch(() => {});
+          await el.fill('').catch(() => {});
+          await el.fill(val, { timeout: 5000 });
+          console.log(`[BrowserAgent] Filled "${fieldKey}" = "${val}" via ${sel}`);
+          return true;
+        }
+      } catch (_) {
+        // try next selector
+      }
+    }
+
+    // Last-resort: find by associated <label> text
+    try {
+      const LABELS = {
+        first_name: ['first name','given name','الاسم الأول','prénom'],
+        last_name:  ['last name','surname','family name','اسم العائلة','nom'],
+        email:      ['email','e-mail','البريد الإلكتروني'],
+        password:   ['password','كلمة المرور','mot de passe'],
+        phone:      ['phone','mobile','telephone','هاتف'],
+      };
+      const labelTexts = LABELS[fieldKey] || [fieldKey.replace(/_/g, ' ')];
+
+      const filled = await page.evaluate(({ texts, val }) => {
+        const labels = Array.from(document.querySelectorAll('label'));
+        for (const text of texts) {
+          const label = labels.find(l => l.textContent.toLowerCase().includes(text.toLowerCase()));
+          if (label) {
+            const input = label.control || document.getElementById(label.htmlFor);
+            if (input && (input.tagName === 'INPUT' || input.tagName === 'TEXTAREA')) {
+              input.focus();
+              input.value = val;
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              return true;
+            }
+          }
+        }
+        return false;
+      }, { texts: labelTexts, val });
+
+      if (filled) {
+        console.log(`[BrowserAgent] Filled "${fieldKey}" via label text search`);
+        return true;
+      }
+    } catch (_) {}
+
+    console.warn(`[BrowserAgent] Could not find field: "${fieldKey}"`);
+    return false;
+  }
+
+  /**
+   * Fill multiple form fields at once using smart field detection
    */
   async fillForm(data, pageId = 'default') {
     console.log(`[BrowserAgent] Filling form with ${Object.keys(data).length} fields`);
@@ -709,12 +811,22 @@ class BrowserAgent {
       const page = this.pages.get(pageId)?.page;
       if (!page) return { success: false, error: 'Page not found' };
 
-      for (const [selector, value] of Object.entries(data)) {
-        await page.fill(selector, value);
+      const failed = [];
+      for (const [fieldKey, value] of Object.entries(data)) {
+        const ok = await this._smartFillField(page, fieldKey, value);
+        if (!ok) failed.push(fieldKey);
+        await page.waitForTimeout(200).catch(() => {});
+      }
+
+      if (failed.length > 0 && failed.length === Object.keys(data).length) {
+        return { success: false, error: `Could not fill any fields: ${failed.join(', ')}` };
+      }
+      if (failed.length > 0) {
+        return { success: true, partial: true, failedFields: failed, filledFields: Object.keys(data).filter(k => !failed.includes(k)) };
       }
       return { success: true, fields: Object.keys(data) };
     } catch (error) {
-      console.error('[BrowserAgent] Fill form failed:', error);
+      console.error('[BrowserAgent] Fill form error:', error);
       return { success: false, error: error.message };
     }
   }

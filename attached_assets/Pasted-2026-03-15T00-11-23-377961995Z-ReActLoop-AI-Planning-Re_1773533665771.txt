@@ -1,0 +1,126 @@
+2026-03-15T00:11:23.377961995Z [ReActLoop] AI Planning Result: {
+2026-03-15T00:11:23.377991286Z   "nextAction": {
+2026-03-15T00:11:23.377994316Z     "type": "fill_form",
+2026-03-15T00:11:23.377997056Z     "params": {
+2026-03-15T00:11:23.377999256Z       "data": {
+2026-03-15T00:11:23.378002526Z         "first_name": "Ahmed",
+2026-03-15T00:11:23.378004586Z         "last_name": "Mansour",
+2026-03-15T00:11:23.378006766Z         "email": "ahmed.m2024@gmail.com",
+2026-03-15T00:11:23.378008896Z         "password": "P@ssw0rd2026!"
+2026-03-15T00:11:23.378010996Z       }
+2026-03-15T00:11:23.378013026Z     }
+2026-03-15T00:11:23.378015096Z   },
+2026-03-15T00:11:23.378018126Z   "reasoning": "يجب البدء بملء الحقول الأساسية للنموذج (الاسم الأول، اسم العائلة، البريد الإلكتروني، كلمة المرور) باستخدام بيانات واقعية قبل التعامل مع تاريخ الميلاد أو النقر على زر التسجيل. هذا الإجراء يتبع تسلسلًا منطقيًا لإنشاء الحساب.",
+2026-03-15T00:11:23.378020436Z   "confidence": 0.9
+2026-03-15T00:11:23.378022496Z }
+2026-03-15T00:11:23.378064007Z [ReActLoop] ACT: Executing action: fill_form
+2026-03-15T00:11:23.378067297Z [BrowserExecutor] Executing action: fill_form
+2026-03-15T00:11:23.378073048Z [BrowserAgent] Filling form with 4 fields
+2026-03-15T00:11:53.379416288Z [BrowserAgent] Fill form failed: page.fill: Timeout 30000ms exceeded.
+2026-03-15T00:11:53.379461939Z Call log:
+2026-03-15T00:11:53.37946853Z   - waiting for locator('[data-agent-id="first_name"]')
+2026-03-15T00:11:53.37947256Z 
+2026-03-15T00:11:53.37947665Z     at BrowserAgent.fillForm (/app/agents/browserAgent.js:713:20)
+2026-03-15T00:11:53.3794806Z     at BrowserExecutor.actionFillForm (/app/agents/browserExecutor.js:244:20)
+2026-03-15T00:11:53.37948456Z     at BrowserExecutor.executeAction (/app/agents/browserExecutor.js:57:31)
+2026-03-15T00:11:53.37948846Z     at ReActLoop.act (/app/agents/reactLoop.js:612:42)
+2026-03-15T00:11:53.37949223Z     at ReActLoop.executeTask (/app/agents/reactLoop.js:335:31)
+2026-03-15T00:11:53.37949712Z     at async TaskController._runTaskExecution (/app/controllers/taskController.js:245:24) {
+2026-03-15T00:11:53.37950174Z   name: 'TimeoutError'
+2026-03-15T00:11:53.37950556Z }
+2026-03-15T00:11:53.37950936Z [ReActLoop] Action failed (attempt 1/3): undefined
+2026-03-15T00:11:55.379569778Z [ReActLoop] ACT: Executing action: fill_form
+2026-03-15T00:11:55.379601738Z [BrowserExecutor] Executing action: fill_form
+2026-03-15T00:11:55.379884835Z [BrowserAgent] Filling form with 4 fields
+2026-03-15T00:12:25.380676651Z [BrowserAgent] Fill form failed: page.fill: Timeout 30000ms exceeded.
+2026-03-15T00:12:25.380706241Z Call log:
+2026-03-15T00:12:25.380720422Z   - waiting for locator('[data-agent-id="first_name"]')
+2026-03-15T00:12:25.380722742Z 
+2026-03-15T00:12:25.380724962Z     at BrowserAgent.fillForm (/app/agents/browserAgent.js:713:20)
+2026-03-15T00:12:25.380727072Z     at BrowserExecutor.actionFillForm (/app/agents/browserExecutor.js:244:20)
+2026-03-15T00:12:25.380729192Z     at BrowserExecutor.executeAction (/app/agents/browserExecutor.js:57:31)
+2026-03-15T00:12:25.380731212Z     at ReActLoop.act (/app/agents/reactLoop.js:612:42)
+2026-03-15T00:12:25.380733452Z     at ReActLoop.executeTask (/app/agents/reactLoop.js:335:31)
+2026-03-15T00:12:25.380736412Z     at async TaskController._runTaskExecution (/app/controllers/taskController.js:245:24) {
+2026-03-15T00:12:25.380739632Z   name: 'TimeoutError'
+2026-03-15T00:12:25.380741782Z }
+2026-03-15T00:12:25.380753823Z [ReActLoop] Action failed (attempt 2/3): undefined
+2026-03-15T00:12:27.380736847Z [ReActLoop] ACT: Executing action: fill_form
+2026-03-15T00:12:27.380786268Z [BrowserExecutor] Executing action: fill_form
+2026-03-15T00:12:27.380795008Z [BrowserAgent] Filling form with 4 fields
+2026-03-15T00:12:57.47820075Z [BrowserAgent] Fill form failed: page.fill: Timeout 30000ms exceeded.
+2026-03-15T00:12:57.478229301Z Call log:
+2026-03-15T00:12:57.478235661Z   - waiting for locator('[data-agent-id="first_name"]')
+2026-03-15T00:12:57.478240221Z 
+2026-03-15T00:12:57.478244811Z     at BrowserAgent.fillForm (/app/agents/browserAgent.js:713:20)
+2026-03-15T00:12:57.478249201Z     at BrowserExecutor.actionFillForm (/app/agents/browserExecutor.js:244:20)
+2026-03-15T00:12:57.478253721Z     at BrowserExecutor.executeAction (/app/agents/browserExecutor.js:57:31)
+2026-03-15T00:12:57.478258481Z     at ReActLoop.act (/app/agents/reactLoop.js:612:42)
+2026-03-15T00:12:57.478262962Z     at ReActLoop.executeTask (/app/agents/reactLoop.js:335:31)
+2026-03-15T00:12:57.478268252Z     at async TaskController._runTaskExecution (/app/controllers/taskController.js:245:24) {
+2026-03-15T00:12:57.478273462Z   name: 'TimeoutError'
+2026-03-15T00:12:57.478310933Z }
+2026-03-15T00:12:57.478392935Z [ReActLoop] Action failed (attempt 3/3): undefined
+2026-03-15T00:12:57.478530178Z [ReActLoop] VERIFY: Verifying action...
+2026-03-15T00:12:57.478537998Z [ReActLoop] OBSERVE: Taking screenshot and analyzing page...
+2026-03-15T00:12:57.580850637Z [BrowserAgent] Extracting interactive elements for page: default
+2026-03-15T00:12:57.687380219Z [BrowserAgent] Extracting accessibility tree for page: default
+2026-03-15T00:12:57.782049941Z 
+2026-03-15T00:12:57.782075771Z [ReActLoop] Iteration 6/15
+2026-03-15T00:12:57.782081892Z [ReActLoop] OBSERVE: Taking screenshot and analyzing page...
+2026-03-15T00:12:57.782991804Z [BrowserAgent] Extracting interactive elements for page: default
+2026-03-15T00:12:58.183878414Z [BrowserAgent] Extracting accessibility tree for page: default
+2026-03-15T00:12:58.584362145Z [MemorySystem] Retrieving relevant memories for context: قم بانشاء حساب فيسبوك
+2026-03-15T00:12:58.586425485Z [ReActLoop] THINK: Reasoning about next steps...
+2026-03-15T00:13:10.129346575Z [ReActLoop] AI Thinking Result: {
+2026-03-15T00:13:10.129372045Z   "currentState": "صفحة إنشاء حساب فيسبوك مفتوحة مع حقول الإدخال الأساسية. هناك حقلان فارغان للإدخال (ربما للاسم الأول واسم العائلة)، ومجموعة من القوائم المنسدلة لتحديد تاريخ الميلاد (الشهر، اليوم، السنة). تم عرض قيم القوائم المنسدلة بشكل كامل. هناك أزرار للرجوع وللمزيد من المعلومات حول تاريخ الميلاد. تم تسجيل محاولات فاشلة سابقة لملء النموذج.",
+2026-03-15T00:13:10.129387226Z   "progress": 30,
+2026-03-15T00:13:10.129389856Z   "obstacles": [
+2026-03-15T00:13:10.129393006Z     "فشل محاولات ملء النموذج سابقاً",
+2026-03-15T00:13:10.129396036Z     "قد تكون هناك حقول إضافية مطلوبة غير ظاهرة حالياً",
+2026-03-15T00:13:10.129398286Z     "قد تكون هناك متطلبات تحقق لاحقة"
+2026-03-15T00:13:10.129400576Z   ],
+2026-03-15T00:13:10.129402986Z   "taskComplete": false,
+2026-03-15T00:13:10.129405296Z   "nextSteps": [
+2026-03-15T00:13:10.129408416Z     "تحديد الحقلين الفارغين وملئهما بالاسم الأول واسم العائلة",
+2026-03-15T00:13:10.129411296Z     "تحديد تاريخ الميلاد من القوائم المنسدلة",
+2026-03-15T00:13:10.129413736Z     "الضغط على زر التالي أو البحث عن حقول إضافية",
+2026-03-15T00:13:10.129416036Z     "التحقق من وجود حقول للبريد الإلكتروني/الهاتف وكلمة المرور"
+2026-03-15T00:13:10.129418317Z   ],
+2026-03-15T00:13:10.129420617Z   "confidence": 75
+2026-03-15T00:13:10.129422897Z }
+2026-03-15T00:13:10.129434697Z [ReActLoop] PLAN: Creating action plan...
+2026-03-15T00:13:19.042899999Z [ReActLoop] AI Planning Result: {
+2026-03-15T00:13:19.04292706Z   "nextAction": {
+2026-03-15T00:13:19.0429319Z     "type": "fill_form",
+2026-03-15T00:13:19.04293661Z     "params": {
+2026-03-15T00:13:19.04294019Z       "data": {
+2026-03-15T00:13:19.04294365Z         "first_name": "Ahmed",
+2026-03-15T00:13:19.042946421Z         "last_name": "Mansour",
+2026-03-15T00:13:19.04294937Z         "email": "ahmed.m2024@gmail.com",
+2026-03-15T00:13:19.042952191Z         "password": "P@ssw0rd2026!"
+2026-03-15T00:13:19.042955061Z       }
+2026-03-15T00:13:19.042957821Z     }
+2026-03-15T00:13:19.042961111Z   },
+2026-03-15T00:13:19.042965211Z   "reasoning": "بناءً على تحليل الصفحة، هناك حقلان فارغان للإدخال (على الأرجح للاسم الأول واسم العائلة) ومجموعة من القوائم المنسدلة لتاريخ الميلاد. نظرًا لوجود محاولات فاشلة سابقة، فإن استخدام إجراء 'fill_form' سيملأ جميع الحقول الأساسية دفعة واحدة (الاسم الأول، اسم العائلة، البريد الإلكتروني، كلمة المرور) مما يقلل من احتمالية الخطأ. هذا الإجراء سيتعامل مع الحقول الظاهرة حاليًا وسيسمح للصفحة بإظهار أي حقول إضافية مطلوبة بعد الملء.",
+2026-03-15T00:13:19.042968201Z   "confidence": 0.85
+2026-03-15T00:13:19.042970951Z }
+2026-03-15T00:13:19.043021262Z [ReActLoop] ACT: Executing action: fill_form
+2026-03-15T00:13:19.043025332Z [BrowserExecutor] Executing action: fill_form
+2026-03-15T00:13:19.043074524Z [BrowserAgent] Filling form with 4 fields
+2026-03-15T00:13:49.079308273Z [BrowserAgent] Fill form failed: page.fill: Timeout 30000ms exceeded.
+2026-03-15T00:13:49.079338073Z Call log:
+2026-03-15T00:13:49.079343534Z   - waiting for locator('[data-agent-id="first_name"]')
+2026-03-15T00:13:49.079347624Z 
+2026-03-15T00:13:49.079352634Z     at BrowserAgent.fillForm (/app/agents/browserAgent.js:713:20)
+2026-03-15T00:13:49.079356984Z     at BrowserExecutor.actionFillForm (/app/agents/browserExecutor.js:244:20)
+2026-03-15T00:13:49.079361034Z     at BrowserExecutor.executeAction (/app/agents/browserExecutor.js:57:31)
+2026-03-15T00:13:49.079365254Z     at ReActLoop.act (/app/agents/reactLoop.js:612:42)
+2026-03-15T00:13:49.079385524Z     at ReActLoop.executeTask (/app/agents/reactLoop.js:335:31)
+2026-03-15T00:13:49.079390065Z     at async TaskController._runTaskExecution (/app/controllers/taskController.js:245:24) {
+2026-03-15T00:13:49.079392925Z   name: 'TimeoutError'
+2026-03-15T00:13:49.079394795Z }
+2026-03-15T00:13:49.079407825Z [ReActLoop] Action failed (attempt 1/3): undefined
+2026-03-15T00:13:51.08034815Z [ReActLoop] ACT: Executing action: fill_form
+2026-03-15T00:13:51.080376611Z [BrowserExecutor] Executing action: fill_form
+2026-03-15T00:13:51.080385471Z [BrowserAgent] Filling form with 4 fields
