@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: ai-browser-agent-node
+    name: CortexFlow
     env: docker
     plan: starter
     dockerfilePath: ./Dockerfile

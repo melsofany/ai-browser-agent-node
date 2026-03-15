@@ -1,4 +1,4 @@
-# إصلاحات تم تطبيقها على مشروع ai-browser-agent-node
+# إصلاحات تم تطبيقها على مشروع CortexFlow
 
 ## ملخص المشكلة
 كان **PlannerAgent** يتوقف عن إكمال المهام عند استخدام **DeepSeek API**، حيث أن الـ `response_format: { type: 'json_object' }` قد يسبب تعارضات في الاستجابات النصية.

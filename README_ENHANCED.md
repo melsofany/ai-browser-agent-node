@@ -42,7 +42,7 @@
 ## البنية المعمارية
 
 ```
-ai-browser-agent-node/
+CortexFlow/
 ├── agents/
 │   ├── browserAgent.js          # التحكم بالمتصفح
 │   ├── plannerAgent.js          # تخطيط المهام مع DeepSeek
@@ -83,8 +83,8 @@ LOG_LEVEL=info
 
 ```bash
 # استنساخ المشروع
-git clone https://github.com/melsofany/ai-browser-agent-node.git
-cd ai-browser-agent-node
+git clone https://github.com/melsofany/CortexFlow.git
+cd CortexFlow
 
 # تثبيت الاعتماديات
 npm install

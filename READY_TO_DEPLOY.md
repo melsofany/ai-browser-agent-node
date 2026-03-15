@@ -32,7 +32,7 @@ vercel
 https://railway.app/dashboard
 → New Project
 → Deploy from GitHub
-→ melsofany/ai-browser-agent-node
+→ melsofany/CortexFlow
 ```
 
 ### الخيار 3: Fly.io

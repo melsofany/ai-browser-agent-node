@@ -54,9 +54,9 @@ DB_PATH=/app/data/app.db
 
 ### على Render
 - **Service:** srv-d6pltunkijhs73agjrb0
-- **Repository:** melsofany/ai-browser-agent-node
+- **Repository:** melsofany/CortexFlow
 - **Branch:** master
-- **URL:** https://ai-browser-agent-node.onrender.com
+- **URL:** https://CortexFlow.onrender.com
 - **Status:** Build in progress ⏳
 
 ### محلياً
@@ -70,7 +70,7 @@ DB_PATH=/app/data/app.db
 ## 🎯 النتائج المتوقعة
 
 ### عند اكتمال النشر
-1. ✅ التطبيق يستجيب على https://ai-browser-agent-node.onrender.com
+1. ✅ التطبيق يستجيب على https://CortexFlow.onrender.com
 2. ✅ Database ينشأ تلقائياً
 3. ✅ جميع APIs تعمل
 4. ✅ Browser automation جاهز
@@ -90,6 +90,6 @@ DB_PATH=/app/data/app.db
 3. قل لي الخطأ وسأصلحه فوراً
 
 إذا نجح:
-1. اختبر: `curl https://ai-browser-agent-node.onrender.com/health`
+1. اختبر: `curl https://CortexFlow.onrender.com/health`
 2. استخدم الـ APIs الموجودة
 3. بدّل `USE_LOCAL_MODELS=true` لتفعيل نماذج AI محلية

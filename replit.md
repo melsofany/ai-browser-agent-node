@@ -49,7 +49,7 @@ DB_PATH=/app/data/app.db (auto)
 ### الخطوات
 1. **Railway Dashboard**: https://railway.app/dashboard
    - New Project → GitHub repo
-   - melsofany/ai-browser-agent-node
+   - melsofany/CortexFlow
    - Deploy
 
 2. **أو Vercel**: `vercel`
@@ -113,7 +113,7 @@ npm run init-db       # تهيئة قاعدة البيانات
 
 ## 🔗 الروابط
 
-- **Repository**: https://github.com/melsofany/ai-browser-agent-node
+- **Repository**: https://github.com/melsofany/CortexFlow
 - **Railway Token**: ba3ebfcd-1392-4c11-98d0-381afef2f8e2
 - **محلي**: http://0.0.0.0:5000
 

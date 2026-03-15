@@ -24,7 +24,7 @@ Ensure your repository is up to date with all the necessary files:
 
 1. Click **"New +"** button
 2. Select **"Web Service"**
-3. Select your GitHub repository (`ai-browser-agent-node`)
+3. Select your GitHub repository (`CortexFlow`)
 4. Click **"Connect"**
 
 ## Step 4: Configure Service Settings
@@ -239,5 +239,5 @@ Once deployment is complete:
 
 For additional help:
 - Check Render's [Status Page](https://status.render.com)
-- Review [GitHub Issues](https://github.com/melsofany/ai-browser-agent-node/issues)
+- Review [GitHub Issues](https://github.com/melsofany/CortexFlow/issues)
 - Contact Render Support through dashboard

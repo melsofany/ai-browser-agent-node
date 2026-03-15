@@ -2,7 +2,7 @@
 
 ## نظرة عامة
 
-تم دمج ستة منصات ذكاء اصطناعي رئيسية في مشروع `ai-browser-agent-node`:
+تم دمج ستة منصات ذكاء اصطناعي رئيسية في مشروع `CortexFlow`:
 
 1. **Llama** (Meta-Llama) - نماذج لغة مفتوحة المصدر
 2. **Mistral** - نماذج لغة عالية الأداء
@@ -14,7 +14,7 @@
 ## البنية الهندسية
 
 ```
-ai-browser-agent-node/
+CortexFlow/
 ├── agents/
 │   ├── llamaIntegration.js          # تكامل Llama
 │   ├── mistralIntegration.js        # تكامل Mistral

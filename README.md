@@ -26,7 +26,7 @@ The platform uses a multi-agent architecture inspired by AutoGen:
 ### Components
 
 ```
-ai-browser-agent-node/
+CortexFlow/
 ├── agents/                 # AI agents
 │   ├── plannerAgent.js
 │   ├── executionAgent.js
@@ -59,8 +59,8 @@ ai-browser-agent-node/
 
 ```bash
 # Clone the repository
-git clone https://github.com/melsofany/ai-browser-agent-node.git
-cd ai-browser-agent-node
+git clone https://github.com/melsofany/CortexFlow.git
+cd CortexFlow
 
 # Install dependencies
 npm install

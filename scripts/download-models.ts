@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import https from 'https';
+import axios from 'axios';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
@@ -44,33 +44,21 @@ function ensureDir(dirPath: string) {
   }
 }
 
-function downloadFile(url: string, dest: string): Promise<void> {
+async function downloadFile(url: string, dest: string): Promise<void> {
+  const writer = fs.createWriteStream(dest);
+  const response = await axios({
+    url,
+    method: 'GET',
+    responseType: 'stream',
+    timeout: 60 * 60 * 1000, // 60 min timeout
+    maxRedirects: 10
+  });
+
+  response.data.pipe(writer);
+
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    const timeout = setTimeout(() => {
-      file.destroy();
-      reject(new Error('Download timeout'));
-    }, 30 * 60 * 1000); // 30 min timeout
-
-    https
-      .get(url, (response) => {
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          clearTimeout(timeout);
-          downloadFile(response.headers.location as string, dest).then(resolve).catch(reject);
-          return;
-        }
-
-        response.pipe(file);
-        file.on('finish', () => {
-          clearTimeout(timeout);
-          file.close();
-          resolve();
-        });
-      })
-      .on('error', (err) => {
-        clearTimeout(timeout);
-        fs.unlink(dest, () => reject(err));
-      });
+    writer.on('finish', resolve);
+    writer.on('error', reject);
   });
 }
 
