@@ -101,6 +101,18 @@ class TaskController extends EventEmitter {
         case 'navigate':
           await page.goto(params.url, { waitUntil: 'networkidle' });
           break;
+        case 'go_back':
+          await page.goBack({ waitUntil: 'networkidle' }).catch(() => {});
+          break;
+        case 'go_forward':
+          await page.goForward({ waitUntil: 'networkidle' }).catch(() => {});
+          break;
+        case 'scroll':
+          await page.mouse.wheel(params.deltaX || 0, params.deltaY || 0);
+          break;
+        case 'type_text':
+          await page.keyboard.type(params.text || '', { delay: 40 });
+          break;
       }
     } catch (err) {
       console.error(`[TaskController] Failed to handle browser event ${type}:`, err);
